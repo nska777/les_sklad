@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+*.zip
+.wrangler
+.sites-runtime
+.openai
+vite.config.ts
+build
+examples
+drizzle
