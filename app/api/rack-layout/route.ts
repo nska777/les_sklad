@@ -25,6 +25,31 @@ async function ensureSideColumn(db: Awaited<ReturnType<typeof getDb>>) {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_cells_rack_side_position ON cells(rack_id, side, row_index, column_index)`);
 }
 
+async function insertRackCells(
+  db: Awaited<ReturnType<typeof getDb>>,
+  rackId: string,
+  code: string,
+  rowCount: number,
+  columnCount: number,
+  sides: Array<"front" | "back">,
+) {
+  const values: ReturnType<typeof sql>[] = [];
+  for (const side of sides) {
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+        const letter = String.fromCharCode(65 + columnIndex);
+        const cellCode = side === "front" ? `${code}${rowIndex + 1}${letter}` : `${code}-B-${rowIndex + 1}${letter}`;
+        values.push(sql`(${crypto.randomUUID()}, ${rackId}, ${cellCode}, ${cellCode}, ${rowIndex}, ${columnIndex}, false, ${side})`);
+      }
+    }
+  }
+  if (!values.length) return;
+  await db.execute(sql`
+    INSERT INTO cells (id, rack_id, code, label, row_index, column_index, blocked, side)
+    VALUES ${sql.join(values, sql`, `)}
+  `);
+}
+
 export async function GET() {
   try {
     const db = await getDb();
@@ -218,22 +243,7 @@ export async function POST(request: Request) {
         INSERT INTO racks (id, name, code, rows, columns, archived, created_at)
         VALUES (${newRackId}, ${name}, ${code}, ${rowCount}, ${columnCount}, false, CURRENT_TIMESTAMP)
       `);
-
-      const createCells = async (cellSide: "front" | "back") => {
-        for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-          for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-            const letter = String.fromCharCode(65 + columnIndex);
-            const cellCode = cellSide === "front" ? `${code}${rowIndex + 1}${letter}` : `${code}-B-${rowIndex + 1}${letter}`;
-            await db.execute(sql`
-              INSERT INTO cells (id, rack_id, code, label, row_index, column_index, blocked, side)
-              VALUES (${crypto.randomUUID()}, ${newRackId}, ${cellCode}, ${cellCode}, ${rowIndex}, ${columnIndex}, false, ${cellSide})
-            `);
-          }
-        }
-      };
-
-      await createCells("front");
-      if (twoSided) await createCells("back");
+      await insertRackCells(db, newRackId, code, rowCount, columnCount, twoSided ? ["front", "back"] : ["front"]);
 
       await writeActivity({
         action: "Создание",
@@ -257,24 +267,11 @@ export async function POST(request: Request) {
     const rack = rowsOf<{ id: string; name: string; code: string; rows: number; columns: number }>(rackResult)[0];
     if (!rack) return Response.json({ error: "Стеллаж не найден" }, { status: 404 });
 
-    const makeCells = async (side: "front" | "back", rowCount: number, columnCount: number, code: string) => {
-      for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-        for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-          const letter = String.fromCharCode(65 + columnIndex);
-          const cellCode = side === "front" ? `${code}${rowIndex + 1}${letter}` : `${code}-B-${rowIndex + 1}${letter}`;
-          await db.execute(sql`
-            INSERT INTO cells (id, rack_id, code, label, row_index, column_index, blocked, side)
-            VALUES (${crypto.randomUUID()}, ${rackId}, ${cellCode}, ${cellCode}, ${rowIndex}, ${columnIndex}, false, ${side})
-          `);
-        }
-      }
-    };
-
     if (action === "enableBackSide") {
       const existsResult = await db.execute(sql`SELECT COUNT(*)::int AS count FROM cells WHERE rack_id = ${rackId} AND side = 'back'`);
       const exists = Number(rowsOf<{ count: number }>(existsResult)[0]?.count || 0);
       if (exists > 0) return Response.json({ ok: true, alreadyExists: true });
-      await makeCells("back", rack.rows, rack.columns, rack.code);
+      await insertRackCells(db, rackId, rack.code, rack.rows, rack.columns, ["back"]);
       await writeActivity({ action: "Добавлена задняя сторона", entityType: "Стеллаж", entityId: rack.id, entityName: `${rack.name} (${rack.code})`, details: `${rack.rows} полок × ${rack.columns} ячеек на задней стороне` });
       return Response.json({ ok: true });
     }
@@ -356,8 +353,7 @@ export async function POST(request: Request) {
       if (layoutChanged) {
         await db.execute(sql`DELETE FROM cells WHERE rack_id = ${rackId}`);
         await db.execute(sql`UPDATE racks SET name = ${name}, code = ${code}, rows = ${rowCount}, columns = ${columnCount} WHERE id = ${rackId}`);
-        await makeCells("front", rowCount, columnCount, code);
-        if (twoSided) await makeCells("back", rowCount, columnCount, code);
+        await insertRackCells(db, rackId, code, rowCount, columnCount, twoSided ? ["front", "back"] : ["front"]);
       } else {
         await db.execute(sql`UPDATE racks SET name = ${name}, code = ${code} WHERE id = ${rackId}`);
         const cellResult = await db.execute(sql`SELECT id, row_index AS "rowIndex", column_index AS "columnIndex", side FROM cells WHERE rack_id = ${rackId}`);
@@ -366,7 +362,7 @@ export async function POST(request: Request) {
           const cellCode = cell.side === "front" ? `${code}${cell.rowIndex + 1}${letter}` : `${code}-B-${cell.rowIndex + 1}${letter}`;
           await db.execute(sql`UPDATE cells SET code = ${cellCode}, label = ${cellCode} WHERE id = ${cell.id}`);
         }
-        if (twoSided && !existingBack) await makeCells("back", rowCount, columnCount, code);
+        if (twoSided && !existingBack) await insertRackCells(db, rackId, code, rowCount, columnCount, ["back"]);
         if (!twoSided && existingBack) await db.execute(sql`DELETE FROM cells WHERE rack_id = ${rackId} AND side = 'back'`);
       }
       await writeActivity({ action: "Редактирование", entityType: "Стеллаж", entityId: rackId, entityName: `${name} (${code})`, details: `${rowCount}×${columnCount}, ${twoSided ? "двухсторонний" : "односторонний"}` });
