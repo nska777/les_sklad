@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Toaster } from "@/components/ui/sonner";
 import { PwaRegister } from "@/app/pwa-tools";
+import { RackTabRouter } from "@/app/rack-tab-router";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body className="antialiased"><PwaRegister />{children}<Toaster richColors position="top-right" /></body>
+      <body className="antialiased"><PwaRegister /><RackTabRouter />{children}<Toaster richColors position="top-right" /></body>
     </html>
   );
 }
