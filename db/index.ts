@@ -24,6 +24,8 @@ async function ensureSchema(client: NeonQueryFunction<false, false>) {
     await client`CREATE INDEX IF NOT EXISTS idx_movements_document_id ON movements(document_id)`;
     await client`CREATE TABLE IF NOT EXISTS activity_logs (id text PRIMARY KEY, action text NOT NULL, entity_type text NOT NULL, entity_id text NOT NULL, entity_name text NOT NULL, details text NOT NULL DEFAULT '', operator text NOT NULL DEFAULT 'Кладовщик', created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
     await client`CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at)`;
+    await client`CREATE TABLE IF NOT EXISTS warehouse_users (id text PRIMARY KEY, username text NOT NULL UNIQUE, name text NOT NULL, password_hash text NOT NULL, password_salt text NOT NULL, role text NOT NULL DEFAULT 'storekeeper', active boolean NOT NULL DEFAULT true, created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`;
+    await client`CREATE INDEX IF NOT EXISTS idx_warehouse_users_role_active ON warehouse_users(role, active)`;
   })().catch((error) => { ready = null; throw error; });
   await ready;
 }
