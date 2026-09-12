@@ -202,6 +202,49 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
+    if (action === "createRack") {
+      const name = clean(body.name);
+      const code = clean(body.code).toUpperCase();
+      const rowCount = Math.min(12, Math.max(1, Math.floor(num(body.rows, 4))));
+      const columnCount = Math.min(12, Math.max(1, Math.floor(num(body.columns, 4))));
+      const twoSided = Boolean(body.twoSided);
+      if (!name || !code) return Response.json({ error: "Укажите название и код стеллажа" }, { status: 400 });
+
+      const duplicateResult = await db.execute(sql`SELECT id FROM racks WHERE code = ${code} LIMIT 1`);
+      if (rowsOf(duplicateResult).length) return Response.json({ error: "Такой код стеллажа уже используется" }, { status: 409 });
+
+      const newRackId = crypto.randomUUID();
+      await db.execute(sql`
+        INSERT INTO racks (id, name, code, rows, columns, archived, created_at)
+        VALUES (${newRackId}, ${name}, ${code}, ${rowCount}, ${columnCount}, false, CURRENT_TIMESTAMP)
+      `);
+
+      const createCells = async (cellSide: "front" | "back") => {
+        for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+          for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+            const letter = String.fromCharCode(65 + columnIndex);
+            const cellCode = cellSide === "front" ? `${code}${rowIndex + 1}${letter}` : `${code}-B-${rowIndex + 1}${letter}`;
+            await db.execute(sql`
+              INSERT INTO cells (id, rack_id, code, label, row_index, column_index, blocked, side)
+              VALUES (${crypto.randomUUID()}, ${newRackId}, ${cellCode}, ${cellCode}, ${rowIndex}, ${columnIndex}, false, ${cellSide})
+            `);
+          }
+        }
+      };
+
+      await createCells("front");
+      if (twoSided) await createCells("back");
+
+      await writeActivity({
+        action: "Создание",
+        entityType: "Стеллаж",
+        entityId: newRackId,
+        entityName: `${name} (${code})`,
+        details: `${rowCount} полок × ${columnCount} ячеек, ${twoSided ? "двухсторонний" : "односторонний"}`,
+      });
+      return Response.json({ ok: true, rackId: newRackId });
+    }
+
     const rackId = clean(body.rackId);
     if (!rackId) return Response.json({ error: "Стеллаж не выбран" }, { status: 400 });
 
