@@ -8,7 +8,7 @@ type Rack = { id: string; name: string; code: string; rows: number; columns: num
 type Cell = { id: string; rackId: string; code: string; label: string; rowIndex: number; columnIndex: number; blocked: boolean; side: "front" | "back" };
 type Stock = { productId: string; cellId: string; quantity: number; productName: string; sku: string; barcode: string; unit: string };
 
-function labelSprite(text: string, accent = false) {
+function labelSprite(text: string, accent = false, widthScale = 1) {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 160;
@@ -29,13 +29,13 @@ function labelSprite(text: string, accent = false) {
   texture.colorSpace = THREE.SRGBColorSpace;
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(2.3, 0.72, 1);
+  sprite.scale.set(2.3 * widthScale, 0.72, 1);
   return sprite;
 }
 
 export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack: Rack; cells: Cell[]; stocks: Stock[]; side: "front" | "back"; onCellClick: (cell: Cell) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef<{ camera?: THREE.PerspectiveCamera; controls?: OrbitControls }>({});
+  const stateRef = useRef<{ camera?: THREE.PerspectiveCamera; controls?: OrbitControls; cameraDistance?: number }>({});
 
   useEffect(() => {
     const host = hostRef.current;
@@ -44,10 +44,20 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     host.innerHTML = "";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf8fafc);
-    scene.fog = new THREE.Fog(0xf8fafc, 18, 34);
+    scene.fog = new THREE.Fog(0xf8fafc, 22, 42);
 
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
-    camera.position.set(side === "front" ? 8 : -8, 5.2, side === "front" ? 11 : -11);
+    // Делаем стеллаж заведомо широким: для 4 ячеек он занимает почти всю сцену.
+    const targetWidth = Math.min(18, Math.max(14.5, rack.columns * 2.9));
+    const columnW = targetWidth / rack.columns;
+    const shelfGap = 1.22;
+    const depth = 1.85;
+    const width = rack.columns * columnW;
+    const height = rack.rows * shelfGap + 0.45;
+    const x0 = -width / 2;
+
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+    const cameraDistance = Math.max(10.5, height * 1.75);
+    camera.position.set(0, Math.max(3.9, height * 0.62), side === "front" ? cameraDistance : -cameraDistance);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -64,24 +74,24 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
     controls.minDistance = 7;
-    controls.maxDistance = 24;
+    controls.maxDistance = 30;
     controls.maxPolarAngle = Math.PI / 2.02;
-    controls.target.set(0, rack.rows * 0.62, 0);
+    controls.target.set(0, height * 0.48, 0);
 
-    stateRef.current = { camera, controls };
+    stateRef.current = { camera, controls, cameraDistance };
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x64748b, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 3.4);
-    key.position.set(7, 12, 8);
+    key.position.set(8, 12, 9);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     scene.add(key);
     const rim = new THREE.DirectionalLight(0xbfd7ff, 1.5);
-    rim.position.set(-8, 6, -8);
+    rim.position.set(-9, 6, -9);
     scene.add(rim);
 
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 20),
+      new THREE.PlaneGeometry(Math.max(30, width + 10), 20),
       new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.92, metalness: 0.03 }),
     );
     floor.rotation.x = -Math.PI / 2;
@@ -91,13 +101,6 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
 
     const rackGroup = new THREE.Group();
     scene.add(rackGroup);
-
-    const columnW = 1.55;
-    const shelfGap = 1.48;
-    const depth = 1.7;
-    const width = rack.columns * columnW;
-    const height = rack.rows * shelfGap + 0.45;
-    const x0 = -width / 2;
 
     const steel = new THREE.MeshStandardMaterial({ color: 0x273449, roughness: 0.42, metalness: 0.74 });
     const shelfMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.52, metalness: 0.55 });
@@ -111,8 +114,8 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
       return mesh;
     };
 
-    addBox(width + 0.6, 0.24, depth + 0.35, 0, 0.05, 0, steel);
-    addBox(width + 0.6, 0.22, depth + 0.35, 0, height + 0.1, 0, steel);
+    addBox(width + 0.7, 0.24, depth + 0.35, 0, 0.05, 0, steel);
+    addBox(width + 0.7, 0.22, depth + 0.35, 0, height + 0.1, 0, steel);
 
     for (let c = 0; c <= rack.columns; c += 1) {
       const x = x0 + c * columnW;
@@ -127,6 +130,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
 
     const interactive: THREE.Object3D[] = [];
     const cellByObject = new Map<string, Cell>();
+    const labelWidthScale = Math.min(1.65, Math.max(1, columnW / 1.9));
 
     for (const cell of cells) {
       const cellStocks = stocks.filter((stock) => stock.cellId === cell.id);
@@ -140,7 +144,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
         emissive: occupied ? 0x102a5c : 0x000000,
         emissiveIntensity: occupied ? 0.18 : 0,
       });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(columnW - 0.18, shelfGap - 0.2, 0.16), cellMaterial);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(columnW - 0.22, shelfGap - 0.18, 0.16), cellMaterial);
       const x = x0 + cell.columnIndex * columnW + columnW / 2;
       const y = cell.rowIndex * shelfGap + shelfGap / 2 + 0.09;
       const z = cell.side === "front" ? depth / 2 + 0.12 : -depth / 2 - 0.12;
@@ -156,15 +160,16 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
       const label = labelSprite(
         occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`,
         occupied,
+        labelWidthScale,
       );
       label.position.set(x, y, cell.side === "front" ? depth / 2 + 0.25 : -depth / 2 - 0.25);
       if (cell.side === "back") label.material.rotation = Math.PI;
       rackGroup.add(label);
     }
 
-    const title = labelSprite(`${rack.code}\n${rack.name}`, true);
-    title.position.set(0, height + 0.8, 0);
-    title.scale.set(3.2, 1, 1);
+    const title = labelSprite(`${rack.code}\n${rack.name}`, true, 1.35);
+    title.position.set(0, height + 0.82, 0);
+    title.scale.set(4.6, 1, 1);
     rackGroup.add(title);
 
     const raycaster = new THREE.Raycaster();
@@ -237,11 +242,11 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
   useEffect(() => {
     const camera = stateRef.current.camera;
     const controls = stateRef.current.controls;
+    const cameraDistance = stateRef.current.cameraDistance || 11;
     if (!camera || !controls) return;
-    const radius = 13;
-    camera.position.set(side === "front" ? 7.5 : -7.5, 5.2, side === "front" ? radius : -radius);
+    camera.position.set(0, Math.max(3.9, rack.rows * 0.76), side === "front" ? cameraDistance : -cameraDistance);
     controls.update();
-  }, [side]);
+  }, [side, rack.rows]);
 
   return <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-inner">
     <div ref={hostRef} className="h-[68vh] min-h-[560px] w-full" />
