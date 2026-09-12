@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ProductBarcode } from "@/components/product-barcode";
 
 type Rack = { id: string; name: string; code: string; rows: number; columns: number };
 type Cell = { id: string; rackId: string; code: string; rowIndex: number; columnIndex: number; blocked: boolean; side: "front" | "back" };
@@ -159,8 +160,10 @@ export default function MaterialsPage() {
           {filtered.map((product) => {
             const stocks = data.stocks.filter((stock) => stock.productId === product.id && stock.quantity > 0);
             const total = stocks.reduce((sum, stock) => sum + stock.quantity, 0);
-            return <article key={product.id} className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(260px,1.5fr)_140px_minmax(340px,2fr)] xl:items-start">
-              <div className="min-w-0"><div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Boxes size={20} /></div><div className="min-w-0"><div className="break-words font-bold">{product.name}</div><div className="mt-1 font-mono text-xs text-slate-500">{product.sku} · {product.barcode}</div></div></div></div>
+            const barcodeValue = product.barcode || product.sku;
+            return <article key={product.id} className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(230px,1.1fr)_minmax(220px,280px)_140px_minmax(340px,1.8fr)] xl:items-start">
+              <div className="min-w-0"><div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Boxes size={20} /></div><div className="min-w-0"><div className="break-words font-bold">{product.name}</div><div className="mt-1 text-xs text-slate-500">RL-код</div><div className="mt-0.5 font-mono text-sm font-semibold text-slate-700">{product.sku}</div></div></div></div>
+              <ProductBarcode value={barcodeValue} compact className="w-full" />
               <div className="rounded-2xl bg-slate-50 p-3 xl:text-right"><div className="text-xs text-slate-500">Всего на складе</div><div className="mt-1 text-2xl font-bold">{qty(total)} <span className="text-sm font-medium text-slate-500">{product.unit}</span></div></div>
               <div><div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Места хранения</div>{stocks.length ? <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">{stocks.map((stock) => {
                 const cell = data.cells.find((item) => item.id === stock.cellId);
