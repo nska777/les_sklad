@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
-import { accessPassword, sessionToken } from "@/lib/warehouse-auth";
+import { authenticateUser, createSessionToken } from "@/lib/warehouse-auth";
 
 export async function POST(request: Request) {
-  const { password } = await request.json() as { password?: string };
-  if (password !== accessPassword()) {
-    return NextResponse.json({ error: "Неверный пароль" }, { status: 401 });
+  const { username, password } = await request.json() as { username?: string; password?: string };
+  const session = authenticateUser(username || "admin", password || "");
+  if (!session) {
+    return NextResponse.json({ error: "Неверный логин или пароль" }, { status: 401 });
   }
-  const response = NextResponse.json({ ok: true });
-  response.cookies.set("warehouse_session", await sessionToken(), {
+
+  const response = NextResponse.json({ ok: true, user: session });
+  response.cookies.set("warehouse_session", await createSessionToken(session), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: false,
     sameSite: "lax",
     maxAge: 60 * 60 * 24 * 30,
     path: "/",
