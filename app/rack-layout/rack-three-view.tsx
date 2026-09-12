@@ -27,7 +27,7 @@ function labelSprite(text: string, accent = false, widthScale = 1) {
   parts.slice(0, 3).forEach((line, index) => ctx.fillText(line, 256, 48 + index * 38, 460));
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, rotation: 0 });
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(2.3 * widthScale, 0.86, 1);
   return sprite;
@@ -163,7 +163,10 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       const first = cellStocks[0];
       const label = labelSprite(occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`, highlighted || occupied, labelWidthScale);
       label.position.set(x, y, cell.side === "front" ? depth / 2 + 0.25 : -depth / 2 - 0.25);
-      if (cell.side === "back") label.material.rotation = Math.PI;
+      // THREE.Sprite сам всегда разворачивается к камере. Никакого ручного
+      // поворота для задней стороны не нужно — иначе при вращении сцены
+      // надпись становится вверх ногами.
+      label.material.rotation = 0;
       rackGroup.add(label);
     }
 
