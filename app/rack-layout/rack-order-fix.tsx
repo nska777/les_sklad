@@ -21,11 +21,17 @@ export function RackOrderFix() {
     };
 
     void fetch("/api/rack-order", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data: RackOrderResponse | null) => {
+      .then(async (response): Promise<RackOrderResponse | null> => {
+        if (!response.ok) return null;
+        return await response.json() as RackOrderResponse;
+      })
+      .then((data) => {
         if (cancelled || !data?.racks) return;
         order = new Map(data.racks.map((rack, index) => [rack.code, index]));
         apply();
+      })
+      .catch(() => {
+        // Порядок — косметика; при ошибке API оставляем серверный порядок.
       });
 
     const observer = new MutationObserver(() => apply());
