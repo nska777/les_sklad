@@ -399,7 +399,7 @@ export async function POST(request: Request) {
       const deducted = await db.update(stocks)
         .set({ quantity: sql`${stocks.quantity} - ${quantity}`, updatedAt: sql`CURRENT_TIMESTAMP` })
         .where(and(eq(stocks.productId, productId), eq(stocks.cellId, fromCellId), sql`${stocks.quantity} >= ${quantity}`))
-        .returning({ quantity: stocks.quantity });
+        .returning();
       if (!deducted.length) return Response.json({ error: "Остаток изменился. Обновите данные и повторите перемещение" }, { status: 409 });
       try {
         await db.insert(stocks).values({ productId, cellId: toCellId, quantity }).onConflictDoUpdate({

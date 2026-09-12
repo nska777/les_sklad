@@ -63,7 +63,15 @@ type Props = {
 };
 
 const qty = (value: number) => Number(value || 0).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
-const newDraftLine = (): IssueLineDraft => ({ id: crypto.randomUUID(), productId: "", quantity: "" });
+
+const createClientId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const newDraftLine = (): IssueLineDraft => ({ id: createClientId(), productId: "", quantity: "" });
 
 export function WarehouseWorkflows({ products, cells, stocks, documents, operator, setOperator, reload }: Props) {
   const [saving, setSaving] = useState(false);
