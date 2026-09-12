@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken } from "@/lib/warehouse-auth";
 
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === "/") {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
   const token = request.cookies.get("warehouse_session")?.value;
   const session = await verifySessionToken(token);
+
+  if (request.nextUrl.pathname === "/") {
+    return NextResponse.redirect(new URL(session ? "/warehouse" : "/login", request.url));
+  }
 
   if (session) {
     if (request.nextUrl.pathname.startsWith("/api/") && request.method !== "GET" && request.method !== "HEAD" && session.role === "viewer") {
