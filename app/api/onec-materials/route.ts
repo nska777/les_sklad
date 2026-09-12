@@ -94,9 +94,28 @@ export async function POST(request: Request) {
 
     const db = await getDb();
     await ensureReference(db);
-    const materialResult = await db.execute(sql`SELECT id, source_row AS "sourceRow", name, linked_product_id AS "linkedProductId" FROM onec_materials WHERE id = ${onecMaterialId} LIMIT 1`);
-    const material = rowsOf<{ id: string; sourceRow: number; name: string; linkedProductId: string | null }>(materialResult)[0];
+    const materialResult = await db.execute(sql`
+      SELECT id, source_row AS "sourceRow", name,
+        available_1c::double precision AS "available1c",
+        linked_product_id AS "linkedProductId"
+      FROM onec_materials WHERE id = ${onecMaterialId} LIMIT 1
+    `);
+    const material = rowsOf<{ id: string; sourceRow: number; name: string; available1c: number; linkedProductId: string | null }>(materialResult)[0];
     if (!material) return Response.json({ error: "Материал из 1С не найден" }, { status: 404 });
+
+    let placedQuantity = 0;
+    if (material.linkedProductId) {
+      const placedResult = await db.execute(sql`SELECT COALESCE(SUM(quantity), 0)::double precision AS total FROM stocks WHERE product_id = ${material.linkedProductId}`);
+      placedQuantity = Number(rowsOf<{ total: number }>(placedResult)[0]?.total || 0);
+    }
+    const remaining = Math.max(0, Number(material.available1c) - placedQuantity);
+    if (remaining <= 0) {
+      return Response.json({ error: `Весь доступный остаток из 1С уже размещён (${material.available1c} шт.)` }, { status: 409 });
+    }
+    if (quantity > remaining + 1e-9) {
+      return Response.json({ error: `Нельзя разместить ${quantity} шт. Осталось по 1С: ${remaining} шт.` }, { status: 409 });
+    }
+
     const [cell] = await db.select().from(cells).where(eq(cells.id, cellId)).limit(1);
     if (!cell || cell.blocked) return Response.json({ error: "Ячейка недоступна" }, { status: 409 });
 
@@ -120,7 +139,7 @@ export async function POST(request: Request) {
 
     await db.insert(movements).values({ id: crypto.randomUUID(), type: "Первичный учёт из 1С", productId, cellId, quantity, operator, source: "onec-reference", comment: "Размещение по справочнику 1С" });
     await db.insert(activityLogs).values({ id: crypto.randomUUID(), action: "Размещение из 1С", entityType: "Материал", entityId: productId, entityName: `${material.name} (${code})`, details: `${quantity} шт. → ${cell.code}`, operator });
-    return Response.json({ ok: true, productId, internalCode: code, barcode: code, cellCode: cell.code, quantity });
+    return Response.json({ ok: true, productId, internalCode: code, barcode: code, cellCode: cell.code, quantity, remainingAfter: remaining - quantity });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Не удалось разместить материал" }, { status: 500 });
   }
