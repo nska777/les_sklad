@@ -6,11 +6,12 @@ import { X } from "lucide-react";
 
 type ProductBarcodeProps = {
   value: string;
+  productName?: string;
   compact?: boolean;
   className?: string;
 };
 
-export function ProductBarcode({ value, compact = false, className = "" }: ProductBarcodeProps) {
+export function ProductBarcode({ value, productName, compact = false, className = "" }: ProductBarcodeProps) {
   const safeValue = value.trim();
   const [open, setOpen] = useState(false);
 
@@ -37,6 +38,7 @@ export function ProductBarcode({ value, compact = false, className = "" }: Produ
           <span className="text-[10px] font-semibold uppercase tracking-[.14em] text-slate-400">Штрихкод</span>
           <span className="text-[10px] font-medium text-blue-600 opacity-0 transition group-hover:opacity-100">Нажмите для увеличения</span>
         </div>
+        {productName && <div className="mb-1 truncate text-center text-xs font-semibold text-slate-700">{productName}</div>}
         <div className="flex max-w-full justify-center overflow-hidden">
           <Barcode
             value={safeValue}
@@ -53,27 +55,28 @@ export function ProductBarcode({ value, compact = false, className = "" }: Produ
 
       {open && (
         <div
-          className="fixed inset-0 z-[120] flex cursor-zoom-out items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setOpen(false)}
-          role="presentation"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Штрихкод ${safeValue}`}
         >
-          <div
-            className="relative w-full max-w-3xl cursor-default rounded-[28px] border border-white/40 bg-white p-5 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <div className="relative w-full max-w-3xl rounded-[28px] border border-white/40 bg-white p-5 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8">
             <button
               type="button"
-              onClick={() => setOpen(false)}
-              className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => { event.stopPropagation(); setOpen(false); }}
+              className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600 shadow-sm transition hover:bg-slate-200 active:scale-95"
               aria-label="Закрыть"
             >
-              <X size={18} />
+              <X size={22} />
             </button>
-            <div className="mb-5 pr-10">
+            <div className="mb-5 pr-14">
               <div className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Штрихкод материала</div>
+              {productName && <div className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{productName}</div>}
               <div className="mt-1 font-mono text-sm font-bold text-slate-700">{safeValue}</div>
             </div>
-            <div className="flex min-h-[220px] items-center justify-center overflow-x-auto rounded-2xl border border-slate-200 bg-white p-5 sm:min-h-[300px] sm:p-8">
+            <div className="flex min-h-[220px] flex-col items-center justify-center gap-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-5 sm:min-h-[300px] sm:p-8">
+              {productName && <div className="max-w-full text-center text-lg font-bold text-slate-900 sm:text-2xl">{productName}</div>}
               <Barcode
                 value={safeValue}
                 format="CODE128"
@@ -85,7 +88,7 @@ export function ProductBarcode({ value, compact = false, className = "" }: Produ
                 background="transparent"
               />
             </div>
-            <div className="mt-4 text-center text-xs text-slate-400">Нажмите вне окна или на крестик, чтобы закрыть</div>
+            <div className="mt-4 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
           </div>
         </div>
       )}
