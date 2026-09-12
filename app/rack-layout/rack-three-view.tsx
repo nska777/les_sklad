@@ -33,7 +33,7 @@ function labelSprite(text: string, accent = false, widthScale = 1) {
   return sprite;
 }
 
-export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack: Rack; cells: Cell[]; stocks: Stock[]; side: "front" | "back"; onCellClick: (cell: Cell) => void }) {
+export function RackThreeView({ rack, cells, stocks, side, onCellClick, highlightCellId }: { rack: Rack; cells: Cell[]; stocks: Stock[]; side: "front" | "back"; onCellClick: (cell: Cell) => void; highlightCellId?: string | null }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<{ camera?: THREE.PerspectiveCamera; controls?: OrbitControls; cameraDistance?: number; targetY?: number }>({});
 
@@ -46,7 +46,6 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     scene.background = new THREE.Color(0xf8fafc);
     scene.fog = new THREE.Fog(0xf8fafc, 24, 46);
 
-    // Стеллаж остаётся широким, но теперь полки заметно выше — без эффекта "сплющенности".
     const targetWidth = Math.min(18, Math.max(14.5, rack.columns * 2.9));
     const columnW = targetWidth / rack.columns;
     const shelfGap = 1.62;
@@ -78,7 +77,6 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     controls.maxDistance = 34;
     controls.maxPolarAngle = Math.PI / 2.02;
     controls.target.set(0, targetY, 0);
-
     stateRef.current = { camera, controls, cameraDistance, targetY };
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x64748b, 2.2));
@@ -91,10 +89,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     rim.position.set(-9, 8, -9);
     scene.add(rim);
 
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.max(30, width + 10), 22),
-      new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.92, metalness: 0.03 }),
-    );
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(30, width + 10), 22), new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.92, metalness: 0.03 }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.12;
     floor.receiveShadow = true;
@@ -102,7 +97,6 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
 
     const rackGroup = new THREE.Group();
     scene.add(rackGroup);
-
     const steel = new THREE.MeshStandardMaterial({ color: 0x273449, roughness: 0.42, metalness: 0.74 });
     const shelfMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.52, metalness: 0.55 });
 
@@ -117,13 +111,11 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
 
     addBox(width + 0.7, 0.24, depth + 0.35, 0, 0.05, 0, steel);
     addBox(width + 0.7, 0.22, depth + 0.35, 0, height + 0.1, 0, steel);
-
     for (let c = 0; c <= rack.columns; c += 1) {
       const x = x0 + c * columnW;
       addBox(0.16, height, 0.16, x, height / 2, -depth / 2, steel);
       addBox(0.16, height, 0.16, x, height / 2, depth / 2, steel);
     }
-
     for (let row = 0; row < rack.rows; row += 1) {
       const y = (row + 1) * shelfGap;
       addBox(width + 0.22, 0.12, depth, 0, y, 0, shelfMat);
@@ -132,20 +124,23 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     const interactive: THREE.Object3D[] = [];
     const cellByObject = new Map<string, Cell>();
     const labelWidthScale = Math.min(1.65, Math.max(1, columnW / 1.9));
+    let highlightedMaterial: THREE.MeshStandardMaterial | null = null;
 
     for (const cell of cells) {
       const cellStocks = stocks.filter((stock) => stock.cellId === cell.id);
       const occupied = cellStocks.length > 0;
+      const highlighted = cell.id === highlightCellId;
       const cellMaterial = new THREE.MeshStandardMaterial({
-        color: occupied ? 0x93c5fd : 0xf8fafc,
+        color: highlighted ? 0xfbbf24 : occupied ? 0x93c5fd : 0xf8fafc,
         transparent: true,
-        opacity: occupied ? 0.72 : 0.28,
+        opacity: highlighted ? 0.9 : occupied ? 0.72 : 0.28,
         roughness: 0.55,
         metalness: 0.05,
-        emissive: occupied ? 0x102a5c : 0x000000,
-        emissiveIntensity: occupied ? 0.18 : 0,
+        emissive: highlighted ? 0xf59e0b : occupied ? 0x102a5c : 0x000000,
+        emissiveIntensity: highlighted ? 0.75 : occupied ? 0.18 : 0,
       });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(columnW - 0.22, shelfGap - 0.24, 0.16), cellMaterial);
+      if (highlighted) highlightedMaterial = cellMaterial;
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(columnW - 0.22, shelfGap - 0.24, highlighted ? 0.24 : 0.16), cellMaterial);
       const x = x0 + cell.columnIndex * columnW + columnW / 2;
       const y = cell.rowIndex * shelfGap + shelfGap / 2 + 0.09;
       const z = cell.side === "front" ? depth / 2 + 0.12 : -depth / 2 - 0.12;
@@ -156,13 +151,15 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
       interactive.push(mesh);
       cellByObject.set(mesh.uuid, cell);
 
+      if (highlighted) {
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0xf97316 }));
+        edges.position.copy(mesh.position);
+        rackGroup.add(edges);
+      }
+
       const total = cellStocks.reduce((sum, stock) => sum + stock.quantity, 0);
       const first = cellStocks[0];
-      const label = labelSprite(
-        occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`,
-        occupied,
-        labelWidthScale,
-      );
+      const label = labelSprite(occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`, highlighted || occupied, labelWidthScale);
       label.position.set(x, y, cell.side === "front" ? depth / 2 + 0.25 : -depth / 2 - 0.25);
       if (cell.side === "back") label.material.rotation = Math.PI;
       rackGroup.add(label);
@@ -177,12 +174,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     const pointer = new THREE.Vector2();
     let downX = 0;
     let downY = 0;
-
-    const onPointerDown = (event: PointerEvent) => {
-      downX = event.clientX;
-      downY = event.clientY;
-      renderer.domElement.style.cursor = "grabbing";
-    };
+    const onPointerDown = (event: PointerEvent) => { downX = event.clientX; downY = event.clientY; renderer.domElement.style.cursor = "grabbing"; };
     const onPointerUp = (event: PointerEvent) => {
       renderer.domElement.style.cursor = "grab";
       if (Math.hypot(event.clientX - downX, event.clientY - downY) > 7) return;
@@ -195,7 +187,6 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
       const cell = cellByObject.get(hit.object.uuid);
       if (cell) onCellClick(cell);
     };
-
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointerup", onPointerUp);
 
@@ -211,7 +202,12 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     resize();
 
     let frame = 0;
+    const startedAt = performance.now();
     const animate = () => {
+      if (highlightedMaterial) {
+        const pulse = (Math.sin((performance.now() - startedAt) / 260) + 1) / 2;
+        highlightedMaterial.emissiveIntensity = 0.45 + pulse * 0.75;
+      }
       controls.update();
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
@@ -225,20 +221,17 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
       controls.dispose();
       scene.traverse((object) => {
-        if (object instanceof THREE.Mesh) {
+        if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
           object.geometry.dispose();
           if (Array.isArray(object.material)) object.material.forEach((m) => m.dispose());
           else object.material.dispose();
         }
-        if (object instanceof THREE.Sprite) {
-          object.material.map?.dispose();
-          object.material.dispose();
-        }
+        if (object instanceof THREE.Sprite) { object.material.map?.dispose(); object.material.dispose(); }
       });
       renderer.dispose();
       host.innerHTML = "";
     };
-  }, [rack, cells, stocks, onCellClick]);
+  }, [rack, cells, stocks, onCellClick, highlightCellId]);
 
   useEffect(() => {
     const camera = stateRef.current.camera;
@@ -253,6 +246,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
 
   return <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-inner">
     <div ref={hostRef} className="h-[74vh] min-h-[640px] w-full" />
+    {highlightCellId && <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-amber-300 bg-amber-50/95 px-4 py-2 text-xs font-bold text-amber-900 shadow-sm backdrop-blur">Найденная ячейка подсвечена</div>}
     <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">ЛКМ + перетаскивание — вращение · колесо — масштаб · клик по ячейке — открыть</div>
   </div>;
 }
