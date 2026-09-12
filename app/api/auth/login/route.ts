@@ -10,18 +10,24 @@ export async function POST(request: Request) {
   const login = String(username || "admin").trim().toLowerCase();
   const pass = String(password || "");
   let session: WarehouseSession | null = null;
+  let persistentUserFound = false;
+  let databaseAvailable = false;
 
   try {
     const db = await getDb();
+    databaseAvailable = true;
     const [user] = await db.select().from(warehouseUsers).where(eq(warehouseUsers.username, login)).limit(1);
+    persistentUserFound = Boolean(user);
     if (user && user.active && await verifyPassword(pass, user.passwordSalt, user.passwordHash)) {
       session = { username: user.username, name: user.name, role: user.role as WarehouseSession["role"] };
     }
   } catch {
-    // Если таблица/БД временно недоступна, остаётся аварийный env-вход.
+    // При недоступной БД остаётся аварийный env-вход.
   }
 
-  session ??= authenticateUser(login, pass);
+  if (!persistentUserFound && (!databaseAvailable || login === "admin")) {
+    session ??= authenticateUser(login, pass);
+  }
   if (!session) {
     return NextResponse.json({ error: "Неверный логин или пароль" }, { status: 401 });
   }
