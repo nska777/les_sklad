@@ -19,6 +19,22 @@ function rowsOf<T>(result: unknown): T[] {
   return [];
 }
 
+function normalizeMovementDate(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const isoLike = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const hasTimezone = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(isoLike);
+  const candidate = hasTimezone ? isoLike : `${isoLike}Z`;
+  const parsed = new Date(candidate);
+
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  // UI истории добавляет Z и преобразует UTC во временную зону браузера.
+  // Поэтому отдаём стабильный UTC-текст без суффикса зоны.
+  return parsed.toISOString().replace("T", " ").replace("Z", "");
+}
+
 async function ensureSideColumn(db: Awaited<ReturnType<typeof getDb>>) {
   await db.execute(sql`ALTER TABLE cells ADD COLUMN IF NOT EXISTS side text NOT NULL DEFAULT 'front'`);
   await db.execute(sql`UPDATE cells SET side = 'front' WHERE side IS NULL OR side = ''`);
@@ -115,12 +131,17 @@ export async function GET() {
       `),
     ]);
 
+    const movements = rowsOf<Record<string, unknown>>(movementsResult).map((movement) => ({
+      ...movement,
+      createdAt: normalizeMovementDate(movement.createdAt),
+    }));
+
     return Response.json({
       racks: rowsOf(racksResult),
       cells: rowsOf(cellsResult),
       stocks: rowsOf(stocksResult),
       products: rowsOf(productsResult),
-      movements: rowsOf(movementsResult),
+      movements,
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Не удалось загрузить стеллажи" }, { status: 500 });
@@ -155,9 +176,6 @@ export async function POST(request: Request) {
       if (!cell || cell.blocked) return Response.json({ error: "Ячейка недоступна" }, { status: 409 });
       if (!product) return Response.json({ error: "Материал не найден" }, { status: 404 });
 
-      // Если товар связан со справочником 1С, обычное добавление из карточки
-      // ячейки не должно позволять физическому остатку превысить доступное
-      // количество из 1С. Проверяем общий остаток товара по ВСЕМ ячейкам.
       const onecTableResult = await db.execute(sql`SELECT to_regclass('public.onec_materials')::text AS name`);
       const onecTableExists = Boolean(rowsOf<{ name: string | null }>(onecTableResult)[0]?.name);
       if (onecTableExists) {
