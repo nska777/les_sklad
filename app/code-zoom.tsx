@@ -25,14 +25,25 @@ function nearbyLabel(svg: SVGSVGElement) {
 
 function openQrPrintPreview(preview: NonNullable<Preview>) {
   const printWindow = window.open("", "_blank", "width=900,height=900");
-  if (!printWindow) return;
+  if (!printWindow) {
+    window.alert("Браузер заблокировал окно предпросмотра. Разрешите всплывающие окна для localhost и попробуйте ещё раз.");
+    return;
+  }
+
+  const safeLabel = preview.label.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char] || char));
 
   printWindow.document.open();
   printWindow.document.write(`<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
-<title>QR-код ${preview.label.replace(/[<>]/g, "")}</title>
+<title>QR-код ${safeLabel}</title>
 <style>
   @page { size: A4 portrait; margin: 14mm; }
   * { box-sizing: border-box; }
@@ -62,7 +73,7 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
   <main class="sheet">
     <section class="label">
       <div class="kind">QR-код ячейки</div>
-      <div class="code">${preview.label.replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char] || char))}</div>
+      <div class="code">${safeLabel}</div>
       <div class="qr">${preview.markup}</div>
     </section>
   </main>
@@ -110,14 +121,23 @@ export function CodeZoom() {
 
   useEffect(() => {
     if (!preview) return;
+
+    // Radix Dialog во время открытого модального окна ставит body { pointer-events: none }.
+    // CodeZoom рендерится выше диалога, поэтому визуально виден, но без этого фикса
+    // кнопки крестика и печати могут вообще не получать клики.
     const oldOverflow = document.body.style.overflow;
+    const oldPointerEvents = document.body.style.pointerEvents;
     document.body.style.overflow = "hidden";
+    document.body.style.pointerEvents = "auto";
+
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setPreview(null);
     };
     window.addEventListener("keydown", onKey);
+
     return () => {
       document.body.style.overflow = oldOverflow;
+      document.body.style.pointerEvents = oldPointerEvents;
       window.removeEventListener("keydown", onKey);
     };
   }, [preview]);
@@ -126,12 +146,16 @@ export function CodeZoom() {
 
   return (
     <div
-      className="no-print fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md animate-in fade-in duration-200"
+      data-code-zoom-root
+      className="no-print fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md animate-in fade-in duration-200"
+      style={{ pointerEvents: "auto" }}
       role="dialog"
       aria-modal="true"
       aria-label={`QR-код ${preview.label}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
     >
-      <div className="relative w-full max-w-xl rounded-[30px] border border-white/40 bg-white p-6 shadow-2xl animate-in zoom-in-90 fade-in duration-200 sm:p-8">
+      <div className="relative w-full max-w-xl rounded-[30px] border border-white/40 bg-white p-6 shadow-2xl animate-in zoom-in-90 fade-in duration-200 sm:p-8" style={{ pointerEvents: "auto" }}>
         <button
           type="button"
           data-code-zoom-close
@@ -145,7 +169,8 @@ export function CodeZoom() {
             event.stopPropagation();
             setPreview(null);
           }}
-          className="absolute right-3 top-3 z-[310] flex h-12 w-12 cursor-pointer items-center justify-center rounded-full bg-slate-100 text-slate-700 shadow-sm transition hover:bg-slate-200 active:scale-95"
+          className="absolute right-3 top-3 z-[10010] flex h-12 w-12 cursor-pointer items-center justify-center rounded-full bg-slate-100 text-slate-700 shadow-sm transition hover:bg-slate-200 active:scale-95"
+          style={{ pointerEvents: "auto" }}
           aria-label="Закрыть QR-код"
         >
           <X size={24} pointerEvents="none" />
@@ -163,14 +188,16 @@ export function CodeZoom() {
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <button
             type="button"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
               openQrPrintPreview(preview);
             }}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
+            className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
+            style={{ pointerEvents: "auto" }}
           >
-            <Printer size={18} /> Предпросмотр и печать
+            <Printer size={18} pointerEvents="none" /> Предпросмотр и печать
           </button>
         </div>
         <div className="mt-3 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
