@@ -122,13 +122,12 @@ export function CodeZoom() {
   useEffect(() => {
     if (!preview) return;
 
-    // Radix Dialog во время открытого модального окна ставит body { pointer-events: none }.
-    // CodeZoom рендерится выше диалога, поэтому визуально виден, но без этого фикса
-    // кнопки крестика и печати могут вообще не получать клики.
+    // Не трогаем body.pointerEvents. Radix Dialog сам управляет им и сам
+    // корректно возвращает клики после закрытия модалки. Раньше мы временно
+    // меняли это значение вручную, из-за чего после закрытия диалога страница
+    // могла оставаться с pointer-events: none до перезагрузки.
     const oldOverflow = document.body.style.overflow;
-    const oldPointerEvents = document.body.style.pointerEvents;
     document.body.style.overflow = "hidden";
-    document.body.style.pointerEvents = "auto";
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setPreview(null);
@@ -137,7 +136,6 @@ export function CodeZoom() {
 
     return () => {
       document.body.style.overflow = oldOverflow;
-      document.body.style.pointerEvents = oldPointerEvents;
       window.removeEventListener("keydown", onKey);
     };
   }, [preview]);
