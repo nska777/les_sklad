@@ -7,6 +7,7 @@ import { Printer, X } from "lucide-react";
 type ProductBarcodeProps = {
   value: string;
   productName?: string;
+  name?: string;
   compact?: boolean;
   className?: string;
 };
@@ -88,16 +89,17 @@ function openBarcodePrintPreview(value: string, name: string, svgMarkup: string)
   printWindow.focus();
 }
 
-export function ProductBarcode({ value, productName, compact = false, className = "" }: ProductBarcodeProps) {
+export function ProductBarcode({ value, productName, name, compact = false, className = "" }: ProductBarcodeProps) {
   const safeValue = value.trim();
+  const explicitName = productName?.trim() || name?.trim() || "";
   const [open, setOpen] = useState(false);
-  const [resolvedName, setResolvedName] = useState(productName?.trim() || "");
+  const [resolvedName, setResolvedName] = useState(explicitName);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const largeBarcodeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setResolvedName(productName?.trim() || findNearbyProductName(buttonRef.current));
-  }, [productName]);
+    setResolvedName(explicitName || findNearbyProductName(buttonRef.current));
+  }, [explicitName]);
 
   useEffect(() => {
     if (!open) return;
@@ -110,7 +112,7 @@ export function ProductBarcode({ value, productName, compact = false, className 
 
   if (!safeValue) return null;
 
-  const shownName = productName?.trim() || resolvedName;
+  const shownName = explicitName || resolvedName;
 
   const printPreview = () => {
     const svg = largeBarcodeRef.current?.querySelector("svg");
@@ -124,7 +126,7 @@ export function ProductBarcode({ value, productName, compact = false, className 
         ref={buttonRef}
         type="button"
         onClick={() => {
-          setResolvedName(productName?.trim() || findNearbyProductName(buttonRef.current));
+          setResolvedName(explicitName || findNearbyProductName(buttonRef.current));
           setOpen(true);
         }}
         className={`group block w-full cursor-zoom-in overflow-hidden rounded-xl border border-black/10 bg-white px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md ${className}`}
