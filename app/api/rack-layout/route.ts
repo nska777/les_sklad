@@ -5,7 +5,7 @@ import { activityLogs } from "@/db/schema";
 export const dynamic = "force-dynamic";
 
 const clean = (value: unknown) => String(value ?? "").trim();
-const number = (value: unknown, fallback = 0) => {
+const num = (value: unknown, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
@@ -25,35 +25,12 @@ async function ensureSideColumn(db: Awaited<ReturnType<typeof getDb>>) {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_cells_rack_side_position ON cells(rack_id, side, row_index, column_index)`);
 }
 
-function cellCode(rackCode: string, side: "front" | "back", rowIndex: number, columnIndex: number) {
-  const letter = String.fromCharCode(65 + columnIndex);
-  return side === "front"
-    ? `${rackCode}${rowIndex + 1}${letter}`
-    : `${rackCode}-B-${rowIndex + 1}${letter}`;
-}
-
-async function createSide(
-  db: Awaited<ReturnType<typeof getDb>>,
-  rack: { id: string; code: string; rows: number; columns: number },
-  side: "front" | "back",
-) {
-  for (let rowIndex = 0; rowIndex < rack.rows; rowIndex += 1) {
-    for (let columnIndex = 0; columnIndex < rack.columns; columnIndex += 1) {
-      const code = cellCode(rack.code, side, rowIndex, columnIndex);
-      await db.execute(sql`
-        INSERT INTO cells (id, rack_id, code, label, row_index, column_index, blocked, side)
-        VALUES (${crypto.randomUUID()}, ${rack.id}, ${code}, ${code}, ${rowIndex}, ${columnIndex}, false, ${side})
-      `);
-    }
-  }
-}
-
 export async function GET() {
   try {
     const db = await getDb();
     await ensureSideColumn(db);
 
-    const [racksResult, cellsResult, stocksResult] = await Promise.all([
+    const [racksResult, cellsResult, stocksResult, productsResult, movementsResult] = await Promise.all([
       db.execute(sql`
         SELECT id, name, code, rows, columns
         FROM racks
@@ -78,12 +55,28 @@ export async function GET() {
         WHERE s.quantity > 0
         ORDER BY p.name
       `),
+      db.execute(sql`
+        SELECT id, name, sku, barcode, unit
+        FROM products
+        ORDER BY name
+      `),
+      db.execute(sql`
+        SELECT m.id, m.cell_id AS "cellId", m.product_id AS "productId",
+               m.type, m.quantity::double precision AS quantity, m.operator,
+               m.comment, m.created_at AS "createdAt", p.name AS "productName", p.unit
+        FROM movements m
+        JOIN products p ON p.id = m.product_id
+        ORDER BY m.created_at DESC
+        LIMIT 300
+      `),
     ]);
 
     return Response.json({
       racks: rowsOf(racksResult),
       cells: rowsOf(cellsResult),
       stocks: rowsOf(stocksResult),
+      products: rowsOf(productsResult),
+      movements: rowsOf(movementsResult),
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Не удалось загрузить стеллажи" }, { status: 500 });
@@ -95,38 +88,118 @@ export async function POST(request: Request) {
     const body = await request.json() as Record<string, unknown>;
     const action = clean(body.action);
     const operator = clean(body.operator) || "Кладовщик";
+
     const db = await getDb();
     await ensureSideColumn(db);
 
-    if (action === "createRack") {
-      const name = clean(body.name);
-      const code = clean(body.code).toUpperCase();
-      const rows = Math.min(12, Math.max(1, Math.floor(number(body.rows, 4))));
-      const columns = Math.min(12, Math.max(1, Math.floor(number(body.columns, 4))));
-      const twoSided = body.twoSided === true;
-      if (!name || !code) return Response.json({ error: "Укажите название и код стеллажа" }, { status: 400 });
+    const writeActivity = async (entry: { action: string; entityType: string; entityId: string; entityName: string; details: string }) => {
+      await db.insert(activityLogs).values({ id: crypto.randomUUID(), operator, ...entry });
+    };
 
-      const duplicate = await db.execute(sql`SELECT id FROM racks WHERE code = ${code} LIMIT 1`);
-      if (rowsOf(duplicate).length) return Response.json({ error: "Такой код стеллажа уже существует" }, { status: 409 });
+    if (action === "addStock") {
+      const cellId = clean(body.cellId);
+      const productId = clean(body.productId);
+      const quantity = num(body.quantity);
+      if (!cellId || !productId || quantity <= 0) return Response.json({ error: "Выберите материал и укажите количество" }, { status: 400 });
 
-      const id = crypto.randomUUID();
+      const [cellResult, productResult] = await Promise.all([
+        db.execute(sql`SELECT id, code, blocked FROM cells WHERE id = ${cellId} LIMIT 1`),
+        db.execute(sql`SELECT id, name, unit FROM products WHERE id = ${productId} LIMIT 1`),
+      ]);
+      const cell = rowsOf<{ id: string; code: string; blocked: boolean }>(cellResult)[0];
+      const product = rowsOf<{ id: string; name: string; unit: string }>(productResult)[0];
+      if (!cell || cell.blocked) return Response.json({ error: "Ячейка недоступна" }, { status: 409 });
+      if (!product) return Response.json({ error: "Материал не найден" }, { status: 404 });
+
       await db.execute(sql`
-        INSERT INTO racks (id, name, code, rows, columns, archived)
-        VALUES (${id}, ${name}, ${code}, ${rows}, ${columns}, false)
+        INSERT INTO stocks (product_id, cell_id, quantity, updated_at)
+        VALUES (${productId}, ${cellId}, ${quantity}, CURRENT_TIMESTAMP)
+        ON CONFLICT (product_id, cell_id)
+        DO UPDATE SET quantity = stocks.quantity + EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
       `);
-      await createSide(db, { id, code, rows, columns }, "front");
-      if (twoSided) await createSide(db, { id, code, rows, columns }, "back");
+      await db.execute(sql`
+        INSERT INTO movements (id, type, product_id, cell_id, quantity, operator, source, comment, created_at)
+        VALUES (${crypto.randomUUID()}, 'Оприходование', ${productId}, ${cellId}, ${quantity}, ${operator}, 'rack-cell', 'Добавлено из карточки ячейки', CURRENT_TIMESTAMP)
+      `);
+      await writeActivity({ action: "Оприходование", entityType: "Ячейка", entityId: cellId, entityName: cell.code, details: `${product.name}: +${quantity} ${product.unit}` });
+      return Response.json({ ok: true });
+    }
 
-      await db.insert(activityLogs).values({
-        id: crypto.randomUUID(),
-        action: "Создание",
-        entityType: "Стеллаж",
-        entityId: id,
-        entityName: `${name} (${code})`,
-        details: `${rows} полок × ${columns} ячеек · ${twoSided ? "двухсторонний" : "односторонний"}`,
-        operator,
-      });
-      return Response.json({ ok: true, rackId: id }, { status: 201 });
+    if (action === "moveStock") {
+      const productId = clean(body.productId);
+      const fromCellId = clean(body.fromCellId);
+      const toCellId = clean(body.toCellId);
+      const quantity = num(body.quantity);
+      if (!productId || !fromCellId || !toCellId || quantity <= 0) return Response.json({ error: "Укажите материал, новую ячейку и количество" }, { status: 400 });
+      if (fromCellId === toCellId) return Response.json({ error: "Новая ячейка должна отличаться от текущей" }, { status: 400 });
+
+      const [sourceResult, targetResult, productResult] = await Promise.all([
+        db.execute(sql`SELECT quantity::double precision AS quantity FROM stocks WHERE product_id = ${productId} AND cell_id = ${fromCellId} LIMIT 1`),
+        db.execute(sql`SELECT id, code, blocked FROM cells WHERE id = ${toCellId} LIMIT 1`),
+        db.execute(sql`SELECT id, name, unit FROM products WHERE id = ${productId} LIMIT 1`),
+      ]);
+      const source = rowsOf<{ quantity: number }>(sourceResult)[0];
+      const target = rowsOf<{ id: string; code: string; blocked: boolean }>(targetResult)[0];
+      const product = rowsOf<{ id: string; name: string; unit: string }>(productResult)[0];
+      if (!source || source.quantity < quantity) return Response.json({ error: `В исходной ячейке доступно ${source?.quantity || 0}` }, { status: 409 });
+      if (!target || target.blocked) return Response.json({ error: "Новая ячейка недоступна" }, { status: 409 });
+      if (!product) return Response.json({ error: "Материал не найден" }, { status: 404 });
+
+      await db.execute(sql`UPDATE stocks SET quantity = quantity - ${quantity}, updated_at = CURRENT_TIMESTAMP WHERE product_id = ${productId} AND cell_id = ${fromCellId}`);
+      await db.execute(sql`DELETE FROM stocks WHERE product_id = ${productId} AND cell_id = ${fromCellId} AND quantity <= 0`);
+      await db.execute(sql`
+        INSERT INTO stocks (product_id, cell_id, quantity, updated_at)
+        VALUES (${productId}, ${toCellId}, ${quantity}, CURRENT_TIMESTAMP)
+        ON CONFLICT (product_id, cell_id)
+        DO UPDATE SET quantity = stocks.quantity + EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+      `);
+      await db.execute(sql`
+        INSERT INTO movements (id, type, product_id, cell_id, quantity, operator, source, comment, created_at)
+        VALUES (${crypto.randomUUID()}, 'Перемещение', ${productId}, ${fromCellId}, ${-quantity}, ${operator}, 'rack-cell', ${`Перемещение → ${target.code}`}, CURRENT_TIMESTAMP)
+      `);
+      await db.execute(sql`
+        INSERT INTO movements (id, type, product_id, cell_id, quantity, operator, source, comment, created_at)
+        VALUES (${crypto.randomUUID()}, 'Перемещение', ${productId}, ${toCellId}, ${quantity}, ${operator}, 'rack-cell', 'Перемещение из другой ячейки', CURRENT_TIMESTAMP)
+      `);
+      await writeActivity({ action: "Перемещение", entityType: "Материал", entityId: productId, entityName: product.name, details: `${quantity} ${product.unit} → ${target.code}` });
+      return Response.json({ ok: true });
+    }
+
+    if (action === "correctStock") {
+      const productId = clean(body.productId);
+      const cellId = clean(body.cellId);
+      const newQuantity = num(body.newQuantity, -1);
+      const reason = clean(body.reason);
+      if (!productId || !cellId || newQuantity < 0 || !reason) return Response.json({ error: "Укажите новое количество и причину корректировки" }, { status: 400 });
+
+      const [stockResult, cellResult, productResult] = await Promise.all([
+        db.execute(sql`SELECT quantity::double precision AS quantity FROM stocks WHERE product_id = ${productId} AND cell_id = ${cellId} LIMIT 1`),
+        db.execute(sql`SELECT id, code FROM cells WHERE id = ${cellId} LIMIT 1`),
+        db.execute(sql`SELECT id, name, unit FROM products WHERE id = ${productId} LIMIT 1`),
+      ]);
+      const oldQuantity = Number(rowsOf<{ quantity: number }>(stockResult)[0]?.quantity || 0);
+      const cell = rowsOf<{ id: string; code: string }>(cellResult)[0];
+      const product = rowsOf<{ id: string; name: string; unit: string }>(productResult)[0];
+      if (!cell || !product) return Response.json({ error: "Материал или ячейка не найдены" }, { status: 404 });
+      const delta = newQuantity - oldQuantity;
+      if (Math.abs(delta) < 0.000001) return Response.json({ ok: true, unchanged: true });
+
+      if (newQuantity === 0) {
+        await db.execute(sql`DELETE FROM stocks WHERE product_id = ${productId} AND cell_id = ${cellId}`);
+      } else {
+        await db.execute(sql`
+          INSERT INTO stocks (product_id, cell_id, quantity, updated_at)
+          VALUES (${productId}, ${cellId}, ${newQuantity}, CURRENT_TIMESTAMP)
+          ON CONFLICT (product_id, cell_id)
+          DO UPDATE SET quantity = EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+        `);
+      }
+      await db.execute(sql`
+        INSERT INTO movements (id, type, product_id, cell_id, quantity, operator, source, comment, created_at)
+        VALUES (${crypto.randomUUID()}, 'Корректировка', ${productId}, ${cellId}, ${delta}, ${operator}, 'rack-cell', ${reason}, CURRENT_TIMESTAMP)
+      `);
+      await writeActivity({ action: "Корректировка", entityType: "Ячейка", entityId: cellId, entityName: cell.code, details: `${product.name}: ${oldQuantity} → ${newQuantity} ${product.unit}. Причина: ${reason}` });
+      return Response.json({ ok: true });
     }
 
     const rackId = clean(body.rackId);
@@ -141,88 +214,73 @@ export async function POST(request: Request) {
     const rack = rowsOf<{ id: string; name: string; code: string; rows: number; columns: number }>(rackResult)[0];
     if (!rack) return Response.json({ error: "Стеллаж не найден" }, { status: 404 });
 
+    const makeCells = async (side: "front" | "back", rowCount: number, columnCount: number, code: string) => {
+      for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+          const letter = String.fromCharCode(65 + columnIndex);
+          const cellCode = side === "front" ? `${code}${rowIndex + 1}${letter}` : `${code}-B-${rowIndex + 1}${letter}`;
+          await db.execute(sql`
+            INSERT INTO cells (id, rack_id, code, label, row_index, column_index, blocked, side)
+            VALUES (${crypto.randomUUID()}, ${rackId}, ${cellCode}, ${cellCode}, ${rowIndex}, ${columnIndex}, false, ${side})
+          `);
+        }
+      }
+    };
+
     if (action === "enableBackSide") {
       const existsResult = await db.execute(sql`SELECT COUNT(*)::int AS count FROM cells WHERE rack_id = ${rackId} AND side = 'back'`);
       const exists = Number(rowsOf<{ count: number }>(existsResult)[0]?.count || 0);
       if (exists > 0) return Response.json({ ok: true, alreadyExists: true });
-      await createSide(db, rack, "back");
-      await db.insert(activityLogs).values({
-        id: crypto.randomUUID(), action: "Добавлена задняя сторона", entityType: "Стеллаж", entityId: rack.id,
-        entityName: `${rack.name} (${rack.code})`, details: `${rack.rows} полок × ${rack.columns} ячеек на задней стороне`, operator,
-      });
+      await makeCells("back", rack.rows, rack.columns, rack.code);
+      await writeActivity({ action: "Добавлена задняя сторона", entityType: "Стеллаж", entityId: rack.id, entityName: `${rack.name} (${rack.code})`, details: `${rack.rows} полок × ${rack.columns} ячеек на задней стороне` });
+      return Response.json({ ok: true });
+    }
+
+    if (action === "deleteRack") {
+      const stockResult = await db.execute(sql`SELECT COUNT(*)::int AS count FROM stocks s JOIN cells c ON c.id = s.cell_id WHERE c.rack_id = ${rackId} AND s.quantity > 0`);
+      if (Number(rowsOf<{ count: number }>(stockResult)[0]?.count || 0) > 0) return Response.json({ error: "Сначала переместите весь материал из стеллажа" }, { status: 409 });
+      await db.execute(sql`UPDATE racks SET archived = true WHERE id = ${rackId}`);
+      await writeActivity({ action: "Удаление", entityType: "Стеллаж", entityId: rack.id, entityName: `${rack.name} (${rack.code})`, details: "Стеллаж удалён из рабочего списка" });
       return Response.json({ ok: true });
     }
 
     if (action === "updateRack") {
       const name = clean(body.name);
       const code = clean(body.code).toUpperCase();
-      const rows = Math.min(12, Math.max(1, Math.floor(number(body.rows, rack.rows))));
-      const columns = Math.min(12, Math.max(1, Math.floor(number(body.columns, rack.columns))));
-      const twoSided = body.twoSided === true;
-      if (!name || !code) return Response.json({ error: "Укажите название и код стеллажа" }, { status: 400 });
+      const rowCount = Math.min(12, Math.max(1, Math.floor(num(body.rows, rack.rows))));
+      const columnCount = Math.min(12, Math.max(1, Math.floor(num(body.columns, rack.columns))));
+      const twoSided = Boolean(body.twoSided);
+      if (!name || !code) return Response.json({ error: "Укажите название и код" }, { status: 400 });
+      const duplicateResult = await db.execute(sql`SELECT id FROM racks WHERE code = ${code} AND id <> ${rackId} LIMIT 1`);
+      if (rowsOf(duplicateResult).length) return Response.json({ error: "Такой код уже используется" }, { status: 409 });
 
-      const duplicate = await db.execute(sql`SELECT id FROM racks WHERE code = ${code} AND id <> ${rackId} LIMIT 1`);
-      if (rowsOf(duplicate).length) return Response.json({ error: "Такой код стеллажа уже существует" }, { status: 409 });
-
-      const stockResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM stocks s JOIN cells c ON c.id = s.cell_id
-        WHERE c.rack_id = ${rackId} AND s.quantity > 0
-      `);
+      const stockResult = await db.execute(sql`SELECT COUNT(*)::int AS count FROM stocks s JOIN cells c ON c.id = s.cell_id WHERE c.rack_id = ${rackId} AND s.quantity > 0`);
       const hasStock = Number(rowsOf<{ count: number }>(stockResult)[0]?.count || 0) > 0;
-      const sizeChanged = rows !== rack.rows || columns !== rack.columns;
-      if (sizeChanged && hasStock) return Response.json({ error: "Нельзя менять размеры занятого стеллажа" }, { status: 409 });
+      const layoutChanged = rowCount !== rack.rows || columnCount !== rack.columns;
+      if (layoutChanged && hasStock) return Response.json({ error: "Нельзя менять размеры стеллажа, пока в нём есть материал" }, { status: 409 });
 
-      const backCountResult = await db.execute(sql`SELECT COUNT(*)::int AS count FROM cells WHERE rack_id = ${rackId} AND side = 'back'`);
-      const hasBack = Number(rowsOf<{ count: number }>(backCountResult)[0]?.count || 0) > 0;
-      if (!twoSided && hasBack) {
-        const backStockResult = await db.execute(sql`
-          SELECT COUNT(*)::int AS count FROM stocks s JOIN cells c ON c.id = s.cell_id
-          WHERE c.rack_id = ${rackId} AND c.side = 'back' AND s.quantity > 0
-        `);
-        if (Number(rowsOf<{ count: number }>(backStockResult)[0]?.count || 0) > 0) {
-          return Response.json({ error: "Нельзя убрать заднюю сторону: на ней есть материалы" }, { status: 409 });
-        }
-      }
+      const backStockResult = await db.execute(sql`SELECT COUNT(*)::int AS count FROM stocks s JOIN cells c ON c.id = s.cell_id WHERE c.rack_id = ${rackId} AND c.side = 'back' AND s.quantity > 0`);
+      const backHasStock = Number(rowsOf<{ count: number }>(backStockResult)[0]?.count || 0) > 0;
+      if (!twoSided && backHasStock) return Response.json({ error: "Нельзя убрать заднюю сторону: сначала переместите с неё материал" }, { status: 409 });
 
-      if (sizeChanged) {
+      const existingBack = Number(rowsOf<{ count: number }>((await db.execute(sql`SELECT COUNT(*)::int AS count FROM cells WHERE rack_id = ${rackId} AND side = 'back'`)))[0]?.count || 0) > 0;
+      if (layoutChanged) {
         await db.execute(sql`DELETE FROM cells WHERE rack_id = ${rackId}`);
-        await db.execute(sql`UPDATE racks SET name = ${name}, code = ${code}, rows = ${rows}, columns = ${columns} WHERE id = ${rackId}`);
-        await createSide(db, { id: rackId, code, rows, columns }, "front");
-        if (twoSided) await createSide(db, { id: rackId, code, rows, columns }, "back");
+        await db.execute(sql`UPDATE racks SET name = ${name}, code = ${code}, rows = ${rowCount}, columns = ${columnCount} WHERE id = ${rackId}`);
+        await makeCells("front", rowCount, columnCount, code);
+        if (twoSided) await makeCells("back", rowCount, columnCount, code);
       } else {
         await db.execute(sql`UPDATE racks SET name = ${name}, code = ${code} WHERE id = ${rackId}`);
-        const cellRows = rowsOf<{ id: string; side: "front" | "back"; rowIndex: number; columnIndex: number }>(await db.execute(sql`
-          SELECT id, side, row_index AS "rowIndex", column_index AS "columnIndex" FROM cells WHERE rack_id = ${rackId}
-        `));
-        for (const cell of cellRows) {
-          const nextCode = cellCode(code, cell.side, cell.rowIndex, cell.columnIndex);
-          await db.execute(sql`UPDATE cells SET code = ${nextCode}, label = ${nextCode} WHERE id = ${cell.id}`);
+        const cellResult = await db.execute(sql`SELECT id, row_index AS "rowIndex", column_index AS "columnIndex", side FROM cells WHERE rack_id = ${rackId}`);
+        for (const cell of rowsOf<{ id: string; rowIndex: number; columnIndex: number; side: "front" | "back" }>(cellResult)) {
+          const letter = String.fromCharCode(65 + cell.columnIndex);
+          const cellCode = cell.side === "front" ? `${code}${cell.rowIndex + 1}${letter}` : `${code}-B-${cell.rowIndex + 1}${letter}`;
+          await db.execute(sql`UPDATE cells SET code = ${cellCode}, label = ${cellCode} WHERE id = ${cell.id}`);
         }
-        if (twoSided && !hasBack) await createSide(db, { id: rackId, code, rows, columns }, "back");
-        if (!twoSided && hasBack) await db.execute(sql`DELETE FROM cells WHERE rack_id = ${rackId} AND side = 'back'`);
+        if (twoSided && !existingBack) await makeCells("back", rowCount, columnCount, code);
+        if (!twoSided && existingBack) await db.execute(sql`DELETE FROM cells WHERE rack_id = ${rackId} AND side = 'back'`);
       }
-
-      await db.insert(activityLogs).values({
-        id: crypto.randomUUID(), action: "Редактирование", entityType: "Стеллаж", entityId: rack.id,
-        entityName: `${name} (${code})`, details: `${rows} полок × ${columns} ячеек · ${twoSided ? "двухсторонний" : "односторонний"}`, operator,
-      });
-      return Response.json({ ok: true });
-    }
-
-    if (action === "deleteRack") {
-      const stockResult = await db.execute(sql`
-        SELECT COUNT(*)::int AS count FROM stocks s JOIN cells c ON c.id = s.cell_id
-        WHERE c.rack_id = ${rackId} AND s.quantity > 0
-      `);
-      if (Number(rowsOf<{ count: number }>(stockResult)[0]?.count || 0) > 0) {
-        return Response.json({ error: "Сначала переместите материалы из этого стеллажа" }, { status: 409 });
-      }
-      await db.execute(sql`UPDATE racks SET archived = true WHERE id = ${rackId}`);
-      await db.insert(activityLogs).values({
-        id: crypto.randomUUID(), action: "Удаление", entityType: "Стеллаж", entityId: rack.id,
-        entityName: `${rack.name} (${rack.code})`, details: "Стеллаж удалён из рабочего списка", operator,
-      });
+      await writeActivity({ action: "Редактирование", entityType: "Стеллаж", entityId: rackId, entityName: `${name} (${code})`, details: `${rowCount}×${columnCount}, ${twoSided ? "двухсторонний" : "односторонний"}` });
       return Response.json({ ok: true });
     }
 
