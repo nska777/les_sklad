@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 const routes: Record<string, string> = {
+  "перемещение": "/transfer",
   "стеллажи": "/rack-layout",
   "материалы": "/materials",
   "этикетки": "/labels",
