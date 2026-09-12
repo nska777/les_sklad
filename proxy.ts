@@ -12,7 +12,7 @@ export async function proxy(request: NextRequest) {
 
     const headers = new Headers(request.headers);
     headers.set("x-warehouse-username", session.username);
-    headers.set("x-warehouse-user", session.name);
+    headers.set("x-warehouse-user", encodeURIComponent(session.name));
     headers.set("x-warehouse-role", session.role);
     return NextResponse.next({ request: { headers } });
   }
