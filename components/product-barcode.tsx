@@ -129,6 +129,7 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
     <>
       <div
         ref={triggerRef}
+        data-barcode-value={safeValue}
         role="button"
         tabIndex={0}
         onClick={(event) => {
