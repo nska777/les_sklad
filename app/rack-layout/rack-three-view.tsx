@@ -55,11 +55,11 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     const x0 = -width / 2;
 
     const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
-    // Стартовый ракурс специально чуть дальше: при первом открытии весь стеллаж
-    // сразу виден целиком, примерно как на рабочем обзорном скриншоте.
-    const cameraDistance = Math.max(12.8, height * 1.58, width * 0.78);
+    // Стартовый ракурс оставляем дальше, чтобы стеллаж при первом открытии
+    // занимал меньше площади и вокруг него был заметный запас воздуха.
+    const cameraDistance = Math.max(16.2, height * 1.9, width * 0.98);
     const targetY = height * 0.46;
-    camera.position.set(0, Math.max(4.6, height * 0.61), side === "front" ? cameraDistance : -cameraDistance);
+    camera.position.set(0, Math.max(4.8, height * 0.63), side === "front" ? cameraDistance : -cameraDistance);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -76,7 +76,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
     controls.minDistance = 8;
-    controls.maxDistance = 34;
+    controls.maxDistance = 38;
     controls.maxPolarAngle = Math.PI / 2.02;
     controls.target.set(0, targetY, 0);
     stateRef.current = { camera, controls, cameraDistance, targetY };
@@ -163,9 +163,6 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       const first = cellStocks[0];
       const label = labelSprite(occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`, highlighted || occupied, labelWidthScale);
       label.position.set(x, y, cell.side === "front" ? depth / 2 + 0.25 : -depth / 2 - 0.25);
-      // THREE.Sprite сам всегда разворачивается к камере. Никакого ручного
-      // поворота для задней стороны не нужно — иначе при вращении сцены
-      // надпись становится вверх ногами.
       label.material.rotation = 0;
       rackGroup.add(label);
     }
@@ -241,10 +238,10 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
   useEffect(() => {
     const camera = stateRef.current.camera;
     const controls = stateRef.current.controls;
-    const cameraDistance = stateRef.current.cameraDistance || 13;
+    const cameraDistance = stateRef.current.cameraDistance || 16.2;
     const targetY = stateRef.current.targetY || rack.rows * 0.75;
     if (!camera || !controls) return;
-    camera.position.set(0, Math.max(4.6, rack.rows * 1.03), side === "front" ? cameraDistance : -cameraDistance);
+    camera.position.set(0, Math.max(4.8, rack.rows * 1.03), side === "front" ? cameraDistance : -cameraDistance);
     controls.target.set(0, targetY, 0);
     controls.update();
   }, [side, rack.rows]);
