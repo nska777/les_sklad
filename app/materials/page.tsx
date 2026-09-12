@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useState, useEffect } from "react";
-import { ArrowLeft, ArrowRightLeft, Boxes, Layers3, Loader2, MapPin, Search, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, Boxes, Layers3, Loader2, MapPin, Search, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +33,8 @@ export default function MaterialsPage() {
   const [shelf, setShelf] = useState("");
   const [cellId, setCellId] = useState("");
   const [amount, setAmount] = useState("");
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -110,6 +112,28 @@ export default function MaterialsPage() {
     } finally { setSaving(false); }
   };
 
+  const deleteAllMaterials = async () => {
+    if (user?.role !== "admin") return toast.error("Только администратор может удалить все материалы");
+    if (resetConfirmation.trim().toUpperCase() !== "УДАЛИТЬ ВСЕ") return toast.error("Введите точную фразу: УДАЛИТЬ ВСЕ");
+    setSaving(true);
+    try {
+      const response = await fetch("/api/materials/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmation: resetConfirmation }),
+      });
+      const result = await response.json() as { error?: string; deletedProducts?: number };
+      if (!response.ok) throw new Error(result.error || "Не удалось удалить материалы");
+      toast.success("Все материалы удалены", { description: `Удалено карточек: ${result.deletedProducts || 0}` });
+      setResetOpen(false);
+      setResetConfirmation("");
+      setQuery("");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось удалить материалы");
+    } finally { setSaving(false); }
+  };
+
   return <main className="min-h-screen px-3 py-4 text-[var(--foreground)] sm:px-5 lg:px-7">
     <div className="mx-auto max-w-[1650px] space-y-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -121,6 +145,7 @@ export default function MaterialsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {user && <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"><ShieldCheck size={16} className="text-blue-600" /><div><b>{user.name}</b><div className="text-xs text-slate-500">{roleName(user.role)}</div></div></div>}
+          {user?.role === "admin" && <Button variant="outline" className="border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800" disabled={!data.products.length} onClick={() => setResetOpen(true)}><Trash2 /> Удалить все материалы</Button>}
           <Button asChild variant="outline"><Link href="/rack-layout"><Layers3 /> 3D-стеллажи</Link></Button>
         </div>
       </div>
@@ -160,6 +185,23 @@ export default function MaterialsPage() {
           <div><Label>Количество</Label><Input className="mt-2" type="number" min="0.001" max={move.max} step="any" value={amount} onChange={(event) => setAmount(event.target.value)} /></div>
         </div>
         <DialogFooter className="mt-6"><Button variant="outline" onClick={() => setMove(null)}>Отмена</Button><Button disabled={saving || !cellId || Number(amount) <= 0 || Number(amount) > move.max} onClick={() => void saveMove()}>{saving ? <Loader2 className="animate-spin" /> : <ArrowRightLeft />} Переместить</Button></DialogFooter></>}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={resetOpen} onOpenChange={(open) => { setResetOpen(open); if (!open) setResetConfirmation(""); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-700"><AlertTriangle size={22} /> Удалить все материалы?</DialogTitle>
+          <DialogDescription>Это полная очистка складской номенклатуры. Будут удалены все карточки материалов, остатки, движения и связанные складские документы. Стеллажи и ячейки останутся. Справочник 1С останется, но его связи с товарами будут сброшены.</DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+          Сейчас будет удалено материалов: <b>{data.products.length}</b>. Действие доступно только администратору.
+        </div>
+        <div className="mt-4"><Label>Для подтверждения введите «УДАЛИТЬ ВСЕ»</Label><Input autoFocus value={resetConfirmation} onChange={(event) => setResetConfirmation(event.target.value)} className="mt-2" placeholder="УДАЛИТЬ ВСЕ" /></div>
+        <DialogFooter className="mt-6 flex-col-reverse gap-2 sm:flex-row">
+          <Button variant="outline" onClick={() => setResetOpen(false)}>Отмена</Button>
+          <Button className="bg-red-600 text-white hover:bg-red-700" disabled={saving || resetConfirmation.trim().toUpperCase() !== "УДАЛИТЬ ВСЕ"} onClick={() => void deleteAllMaterials()}>{saving ? <Loader2 className="animate-spin" /> : <Trash2 />} Удалить все материалы</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   </main>;
