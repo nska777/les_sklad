@@ -95,7 +95,6 @@ export async function GET(request: Request) {
     const q = clean(url.searchParams.get("q"));
     const page = Math.max(1, Math.floor(num(url.searchParams.get("page")) || 1));
     const pageSize = Math.min(100, Math.max(10, Math.floor(num(url.searchParams.get("pageSize")) || 50)));
-    const offset = (page - 1) * pageSize;
     const pattern = `%${q}%`;
     const prefix = `${q}%`;
 
@@ -192,6 +191,27 @@ export async function POST(request: Request) {
       const [cell] = await db.select().from(cells).where(eq(cells.id, cellId)).limit(1);
       if (!cell || cell.blocked) return Response.json({ error: "Ячейка недоступна" }, { status: 409 });
 
+      const occupiedResult = await db.execute(sql`
+        SELECT p.name AS "productName", p.sku,
+               s.quantity::double precision AS quantity, p.unit
+        FROM stocks s
+        JOIN products p ON p.id = s.product_id
+        WHERE s.cell_id = ${cellId} AND s.quantity > 0
+        ORDER BY p.name
+      `);
+      const occupied = rowsOf<{ productName: string; sku: string; quantity: number; unit: string }>(occupiedResult);
+      if (occupied.length) {
+        const contents = occupied
+          .map((row) => `${row.productName}${row.sku ? ` (${row.sku})` : ""} — ${Number(row.quantity).toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${row.unit || "шт."}`)
+          .join(", ");
+        return Response.json({
+          error: `Ячейка ${cell.code} уже занята: ${contents}. Выберите свободную ячейку.`,
+          occupied: true,
+          cellCode: cell.code,
+          contents: occupied,
+        }, { status: 409 });
+      }
+
       let productId = material.linkedProductId;
       let code = "";
       if (productId) {
@@ -217,12 +237,7 @@ export async function POST(request: Request) {
         await db.execute(sql`UPDATE onec_materials SET linked_product_id = ${productId} WHERE id = ${onecMaterialId}`);
       }
 
-      const [stock] = await db.select().from(stocks).where(sql`${stocks.productId} = ${productId} AND ${stocks.cellId} = ${cellId}`).limit(1);
-      if (stock) {
-        await db.update(stocks).set({ quantity: stock.quantity + quantity, updatedAt: sql`CURRENT_TIMESTAMP` }).where(sql`${stocks.productId} = ${productId} AND ${stocks.cellId} = ${cellId}`);
-      } else {
-        await db.insert(stocks).values({ productId, cellId, quantity });
-      }
+      await db.insert(stocks).values({ productId, cellId, quantity });
 
       await db.insert(movements).values({
         id: crypto.randomUUID(),
