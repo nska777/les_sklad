@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sessionToken } from "@/lib/warehouse-auth";
+import { verifySessionToken } from "@/lib/warehouse-auth";
 
 export async function proxy(request: NextRequest) {
   const token = request.cookies.get("warehouse_session")?.value;
-  if (token === await sessionToken()) return NextResponse.next();
+  if (await verifySessionToken(token)) return NextResponse.next();
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Требуется вход" }, { status: 401 });
   }
