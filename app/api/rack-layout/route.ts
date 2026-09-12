@@ -24,10 +24,6 @@ async function ensureSideColumn(db: Awaited<ReturnType<typeof getDb>>) {
   await db.execute(sql`UPDATE cells SET side = 'front' WHERE side IS NULL OR side = ''`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_cells_rack_side_position ON cells(rack_id, side, row_index, column_index)`);
 
-  // Архивный стеллаж не должен навсегда занимать свой рабочий код.
-  // Саму запись и связанные ячейки оставляем для истории движений, но
-  // технически переименовываем их коды. Поэтому после удаления CT-01
-  // можно сразу создать новый CT-01 без конфликта unique-ограничений.
   const archivedResult = await db.execute(sql`
     SELECT id, code
     FROM racks
@@ -158,6 +154,50 @@ export async function POST(request: Request) {
       const product = rowsOf<{ id: string; name: string; unit: string }>(productResult)[0];
       if (!cell || cell.blocked) return Response.json({ error: "Ячейка недоступна" }, { status: 409 });
       if (!product) return Response.json({ error: "Материал не найден" }, { status: 404 });
+
+      // Если товар связан со справочником 1С, обычное добавление из карточки
+      // ячейки не должно позволять физическому остатку превысить доступное
+      // количество из 1С. Проверяем общий остаток товара по ВСЕМ ячейкам.
+      const onecTableResult = await db.execute(sql`SELECT to_regclass('public.onec_materials')::text AS name`);
+      const onecTableExists = Boolean(rowsOf<{ name: string | null }>(onecTableResult)[0]?.name);
+      if (onecTableExists) {
+        const referenceResult = await db.execute(sql`
+          SELECT available_1c::double precision AS "available1c"
+          FROM onec_materials
+          WHERE linked_product_id = ${productId}
+          LIMIT 1
+        `);
+        const reference = rowsOf<{ available1c: number }>(referenceResult)[0];
+        if (reference) {
+          const totalResult = await db.execute(sql`
+            SELECT COALESCE(SUM(quantity), 0)::double precision AS total
+            FROM stocks
+            WHERE product_id = ${productId}
+          `);
+          const currentTotal = Number(rowsOf<{ total: number }>(totalResult)[0]?.total || 0);
+          const available1c = Number(reference.available1c || 0);
+          const remaining = Math.max(0, available1c - currentTotal);
+
+          if (remaining <= 1e-9) {
+            return Response.json({
+              error: `Невозможно добавить: максимальное количество товара уже размещено (${available1c.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${product.unit})`,
+              maxReached: true,
+              available1c,
+              currentTotal,
+              remaining: 0,
+            }, { status: 409 });
+          }
+          if (quantity > remaining + 1e-9) {
+            return Response.json({
+              error: `Нельзя добавить ${quantity.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${product.unit}. Можно добавить максимум ${remaining.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${product.unit}`,
+              maxReached: false,
+              available1c,
+              currentTotal,
+              remaining,
+            }, { status: 409 });
+          }
+        }
+      }
 
       await db.execute(sql`
         INSERT INTO stocks (product_id, cell_id, quantity, updated_at)
