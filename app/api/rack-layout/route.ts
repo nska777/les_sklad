@@ -23,6 +23,29 @@ async function ensureSideColumn(db: Awaited<ReturnType<typeof getDb>>) {
   await db.execute(sql`ALTER TABLE cells ADD COLUMN IF NOT EXISTS side text NOT NULL DEFAULT 'front'`);
   await db.execute(sql`UPDATE cells SET side = 'front' WHERE side IS NULL OR side = ''`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_cells_rack_side_position ON cells(rack_id, side, row_index, column_index)`);
+
+  // Архивный стеллаж не должен навсегда занимать свой рабочий код.
+  // Саму запись и связанные ячейки оставляем для истории движений, но
+  // технически переименовываем их коды. Поэтому после удаления CT-01
+  // можно сразу создать новый CT-01 без конфликта unique-ограничений.
+  const archivedResult = await db.execute(sql`
+    SELECT id, code
+    FROM racks
+    WHERE archived = true AND code NOT LIKE '__ARCHIVED__%'
+  `);
+  for (const archivedRack of rowsOf<{ id: string; code: string }>(archivedResult)) {
+    const prefix = `__ARCHIVED__${archivedRack.id}__`;
+    await db.execute(sql`
+      UPDATE cells
+      SET code = ${prefix} || code
+      WHERE rack_id = ${archivedRack.id} AND code NOT LIKE '__ARCHIVED__%'
+    `);
+    await db.execute(sql`
+      UPDATE racks
+      SET code = ${prefix} || code
+      WHERE id = ${archivedRack.id}
+    `);
+  }
 }
 
 async function insertRackCells(
