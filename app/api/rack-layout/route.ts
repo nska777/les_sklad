@@ -237,11 +237,57 @@ export async function POST(request: Request) {
     }
 
     if (action === "deleteRack") {
-      const stockResult = await db.execute(sql`SELECT COUNT(*)::int AS count FROM stocks s JOIN cells c ON c.id = s.cell_id WHERE c.rack_id = ${rackId} AND s.quantity > 0`);
-      if (Number(rowsOf<{ count: number }>(stockResult)[0]?.count || 0) > 0) return Response.json({ error: "Сначала переместите весь материал из стеллажа" }, { status: 409 });
+      const stockResult = await db.execute(sql`
+        SELECT s.product_id AS "productId", s.cell_id AS "cellId",
+               s.quantity::double precision AS quantity,
+               p.name AS "productName", p.unit, c.code AS "cellCode"
+        FROM stocks s
+        JOIN cells c ON c.id = s.cell_id
+        JOIN products p ON p.id = s.product_id
+        WHERE c.rack_id = ${rackId} AND s.quantity > 0
+        ORDER BY c.code, p.name
+      `);
+      const rackStocks = rowsOf<{ productId: string; cellId: string; quantity: number; productName: string; unit: string; cellCode: string }>(stockResult);
+      const force = body.force === true;
+
+      if (rackStocks.length && !force) {
+        return Response.json({
+          error: "В стеллаже есть материал",
+          hasStock: true,
+          positions: rackStocks.length,
+          totalQuantity: rackStocks.reduce((sum, row) => sum + Number(row.quantity || 0), 0),
+        }, { status: 409 });
+      }
+
+      if (rackStocks.length && force) {
+        const role = clean(request.headers.get("x-warehouse-role"));
+        if (role !== "admin") {
+          return Response.json({ error: "Удаление стеллажа вместе с остатками доступно только администратору" }, { status: 403 });
+        }
+
+        for (const stock of rackStocks) {
+          await db.execute(sql`
+            INSERT INTO movements (id, type, product_id, cell_id, quantity, operator, source, comment, created_at)
+            VALUES (${crypto.randomUUID()}, 'Списание при удалении стеллажа', ${stock.productId}, ${stock.cellId}, ${-Number(stock.quantity)}, ${operator}, 'rack-delete', ${`Удалён стеллаж ${rack.code}`}, CURRENT_TIMESTAMP)
+          `);
+        }
+        await db.execute(sql`
+          DELETE FROM stocks
+          WHERE cell_id IN (SELECT id FROM cells WHERE rack_id = ${rackId})
+        `);
+      }
+
       await db.execute(sql`UPDATE racks SET archived = true WHERE id = ${rackId}`);
-      await writeActivity({ action: "Удаление", entityType: "Стеллаж", entityId: rack.id, entityName: `${rack.name} (${rack.code})`, details: "Стеллаж удалён из рабочего списка" });
-      return Response.json({ ok: true });
+      await writeActivity({
+        action: force && rackStocks.length ? "Удаление с остатками" : "Удаление",
+        entityType: "Стеллаж",
+        entityId: rack.id,
+        entityName: `${rack.name} (${rack.code})`,
+        details: rackStocks.length
+          ? `Удалён вместе с содержимым: ${rackStocks.length} позиций. Все остатки списаны отдельными движениями.`
+          : "Стеллаж удалён из рабочего списка",
+      });
+      return Response.json({ ok: true, removedPositions: force ? rackStocks.length : 0 });
     }
 
     if (action === "updateRack") {
