@@ -13,8 +13,8 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "ru",
     prefer_related_applications: false,
     icons: [
-      { src: "/app-icon.svg", sizes: "192x192", type: "image/svg+xml", purpose: "any maskable" },
-      { src: "/app-icon.svg", sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" },
+      { src: "/app-icon.svg", sizes: "192x192", type: "image/svg+xml", purpose: "any" },
+      { src: "/app-icon.svg", sizes: "512x512", type: "image/svg+xml", purpose: "maskable" },
     ],
   };
 }
