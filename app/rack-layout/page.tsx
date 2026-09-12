@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRightLeft, Boxes, History, Layers3, Loader2, MapPin, Pencil, Plus, QrCode, Rotate3D, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Boxes, History, Layers3, Loader2, MapPin, Pencil, Plus, QrCode, Rotate3D, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ type Stock = { productId: string; cellId: string; quantity: number; productName:
 type Product = { id: string; name: string; sku: string; barcode: string; unit: string };
 type Movement = { id: string; cellId: string; productId: string; type: string; quantity: number; operator: string; comment: string; createdAt: string; productName: string; unit: string };
 type ApiResult = { racks: Rack[]; cells: Cell[]; stocks: Stock[]; products: Product[]; movements: Movement[]; error?: string };
-
 type CellMode = "overview" | "add" | "move" | "correct" | "history";
 
 const emptyData: ApiResult = { racks: [], cells: [], stocks: [], products: [], movements: [] };
@@ -43,6 +42,8 @@ export default function RackLayoutPage() {
   const [correctProductId, setCorrectProductId] = useState("");
   const [correctQuantity, setCorrectQuantity] = useState("");
   const [correctReason, setCorrectReason] = useState("");
+  const [locatorQuery, setLocatorQuery] = useState("");
+  const [highlightCellId, setHighlightCellId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +65,46 @@ export default function RackLayoutPage() {
   const selectedStocks = selectedCell ? data.stocks.filter((stock) => stock.cellId === selectedCell.id) : [];
   const selectedHistory = selectedCell ? data.movements.filter((movement) => movement.cellId === selectedCell.id) : [];
 
+  const locatorResults = useMemo(() => {
+    const q = locatorQuery.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return data.products
+      .filter((product) => `${product.name} ${product.sku} ${product.barcode}`.toLowerCase().includes(q))
+      .map((product) => ({ product, stocks: data.stocks.filter((stock) => stock.productId === product.id && stock.quantity > 0) }))
+      .filter((row) => row.stocks.length)
+      .slice(0, 8);
+  }, [locatorQuery, data.products, data.stocks]);
+
+  const locateCell = useCallback((cellId: string, open = false) => {
+    const cell = data.cells.find((item) => item.id === cellId);
+    if (!cell) return;
+    setActiveRackId(cell.rackId);
+    setSide(cell.side);
+    setHighlightCellId(cell.id);
+    if (open) {
+      setSelectedCell(cell);
+      setCellMode("overview");
+    }
+    window.setTimeout(() => document.getElementById("rack-3d-scene")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+  }, [data.cells]);
+
+  useEffect(() => {
+    if (!data.cells.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const cellId = params.get("cell");
+    const cellCode = params.get("cellCode");
+    const productId = params.get("product");
+    if (cellId && data.cells.some((cell) => cell.id === cellId)) return locateCell(cellId);
+    if (cellCode) {
+      const found = data.cells.find((cell) => cell.code.toLowerCase() === cellCode.toLowerCase());
+      if (found) return locateCell(found.id);
+    }
+    if (productId) {
+      const stock = data.stocks.find((item) => item.productId === productId && item.quantity > 0);
+      if (stock) locateCell(stock.cellId);
+    }
+  }, [data.cells, data.stocks, locateCell]);
+
   const apiAction = async (body: Record<string, unknown>) => {
     const response = await fetch("/api/rack-layout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const result = await response.json() as { error?: string; rackId?: string };
@@ -78,6 +119,7 @@ export default function RackLayoutPage() {
   };
 
   const openCell = (cell: Cell) => {
+    setHighlightCellId(cell.id);
     setSelectedCell(cell);
     setCellMode("overview");
     resetCellForms();
@@ -91,7 +133,7 @@ export default function RackLayoutPage() {
       const result = await apiAction({ action: "createRack", name: form.get("name"), code: form.get("code"), rows: form.get("rows"), columns: form.get("columns"), twoSided: form.get("twoSided") === "on", operator });
       await load();
       if (result.rackId) setActiveRackId(result.rackId);
-      setCreateOpen(false); setSide("front"); toast.success("Стеллаж создан");
+      setCreateOpen(false); setSide("front"); setHighlightCellId(null); toast.success("Стеллаж создан");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Ошибка создания"); }
     finally { setSaving(false); }
   };
@@ -102,7 +144,7 @@ export default function RackLayoutPage() {
     setSaving(true);
     try {
       await apiAction({ action: "updateRack", rackId: editRack.id, name: form.get("name"), code: form.get("code"), rows: form.get("rows"), columns: form.get("columns"), twoSided: form.get("twoSided") === "on", operator });
-      await load(); setEditRack(null); setSide("front"); toast.success("Стеллаж обновлён");
+      await load(); setEditRack(null); setSide("front"); setHighlightCellId(null); toast.success("Стеллаж обновлён");
     } catch (error) { toast.error(error instanceof Error ? error.message : "Ошибка редактирования"); }
     finally { setSaving(false); }
   };
@@ -110,7 +152,7 @@ export default function RackLayoutPage() {
   const deleteRack = async () => {
     if (!activeRack || !confirm(`Удалить стеллаж ${activeRack.name} (${activeRack.code})?`)) return;
     setSaving(true);
-    try { await apiAction({ action: "deleteRack", rackId: activeRack.id, operator }); await load(); setSide("front"); toast.success("Стеллаж удалён"); }
+    try { await apiAction({ action: "deleteRack", rackId: activeRack.id, operator }); await load(); setSide("front"); setHighlightCellId(null); toast.success("Стеллаж удалён"); }
     catch (error) { toast.error(error instanceof Error ? error.message : "Не удалось удалить"); }
     finally { setSaving(false); }
   };
@@ -161,7 +203,7 @@ export default function RackLayoutPage() {
             <Link href="/" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16} /> Назад в склад</Link>
             <p className="eyebrow">Адресное хранение · 3D</p>
             <h1 className="page-title">Стеллажи склада</h1>
-            <p className="page-description">Стеллажи, реальные остатки и операции с ячейками в одном рабочем экране.</p>
+            <p className="page-description">Найдите материал — система сама откроет нужный стеллаж, сторону и подсветит ячейку.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Input value={operator} onChange={(event) => setOperator(event.target.value)} className="w-44 bg-white/80" placeholder="Кладовщик" />
@@ -170,23 +212,28 @@ export default function RackLayoutPage() {
           </div>
         </div>
 
-        <section className="panel p-3 sm:p-4">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Стеллажи</div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {data.racks.map((rack) => {
-              const cells = data.cells.filter((cell) => cell.rackId === rack.id);
-              const occupied = new Set(data.stocks.filter((stock) => cells.some((cell) => cell.id === stock.cellId)).map((stock) => stock.cellId)).size;
-              return <button key={rack.id} type="button" onClick={() => { setActiveRackId(rack.id); setSide("front"); }} className={`min-w-[190px] cursor-pointer rounded-2xl border px-4 py-3 text-left transition ${activeRack?.id === rack.id ? "border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200" : "border-black/10 bg-white/80 hover:border-blue-300 hover:bg-blue-50"}`}><div className="text-xs opacity-70">{rack.code}</div><div className="mt-1 truncate font-bold">{rack.name}</div><div className="mt-2 text-xs opacity-75">{rack.rows} полок · {rack.columns} мест · занято {occupied}</div></button>;
-            })}
+        <section className="panel overflow-visible p-3 sm:p-4">
+          <div className="grid gap-4 xl:grid-cols-[minmax(320px,1fr)_2fr]">
+            <div className="relative">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Найти материал на складе</div>
+              <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><Input value={locatorQuery} onChange={(event) => setLocatorQuery(event.target.value)} placeholder="Название, RL-код или штрихкод" className="pl-10" /></div>
+              {locatorQuery.trim().length >= 2 && <div className="absolute left-0 right-0 top-[74px] z-30 max-h-80 overflow-y-auto rounded-2xl border border-black/10 bg-white p-2 shadow-xl">
+                {locatorResults.length ? locatorResults.map(({ product, stocks }) => <div key={product.id} className="rounded-xl p-2 hover:bg-slate-50"><div className="font-semibold">{product.name}</div><div className="text-xs text-slate-500">{product.sku} · {product.barcode}</div><div className="mt-2 flex flex-wrap gap-1.5">{stocks.map((stock) => { const cell = data.cells.find((item) => item.id === stock.cellId); return cell ? <button key={stock.cellId} type="button" onClick={() => { locateCell(stock.cellId); setLocatorQuery(""); }} className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"><MapPin size={12} className="mr-1 inline" />{cell.code} · {qty(stock.quantity)} {stock.unit}</button> : null; })}</div></div>) : <div className="p-4 text-center text-sm text-slate-500">Размещённый материал не найден</div>}
+              </div>}
+            </div>
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[.14em] text-slate-500">Стеллажи</div>
+              <div className="flex gap-2 overflow-x-auto pb-1">{data.racks.map((rack) => { const cells = data.cells.filter((cell) => cell.rackId === rack.id); const occupied = new Set(data.stocks.filter((stock) => cells.some((cell) => cell.id === stock.cellId)).map((stock) => stock.cellId)).size; return <button key={rack.id} type="button" onClick={() => { setActiveRackId(rack.id); setSide("front"); setHighlightCellId(null); }} className={`min-w-[190px] cursor-pointer rounded-2xl border px-4 py-3 text-left transition ${activeRack?.id === rack.id ? "border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200" : "border-black/10 bg-white/80 hover:border-blue-300 hover:bg-blue-50"}`}><div className="text-xs opacity-70">{rack.code}</div><div className="mt-1 truncate font-bold">{rack.name}</div><div className="mt-2 text-xs opacity-75">{rack.rows} полок · {rack.columns} мест · занято {occupied}</div></button>; })}</div>
+            </div>
           </div>
         </section>
 
-        {loading ? <div className="panel flex min-h-[560px] items-center justify-center"><Loader2 className="animate-spin" /></div> : !activeRack ? <div className="panel p-12 text-center text-slate-500">Стеллажей пока нет</div> : <section className="panel overflow-hidden">
+        {loading ? <div className="panel flex min-h-[560px] items-center justify-center"><Loader2 className="animate-spin" /></div> : !activeRack ? <div className="panel p-12 text-center text-slate-500">Стеллажей пока нет</div> : <section id="rack-3d-scene" className="panel overflow-hidden">
           <div className="flex flex-col gap-3 border-b border-black/10 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[.14em] text-slate-500"><Layers3 size={15} /> Стеллаж {activeRack.code}</div><h2 className="mt-1 text-2xl font-bold">{activeRack.name}</h2><p className="mt-1 text-sm text-slate-500">{activeRack.rows} полок · {activeRack.columns} ячеек на стороне · {hasBack ? "двухсторонний" : "односторонний"}</p></div>
-            <div className="flex flex-wrap items-center gap-2"><div className="rounded-xl border border-black/10 bg-slate-100 p-1"><button type="button" onClick={() => setSide("front")} className={`cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold ${side === "front" ? "bg-white text-blue-700 shadow" : "text-slate-500"}`}>Лицевая</button><button type="button" disabled={!hasBack} onClick={() => setSide("back")} className={`cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold ${side === "back" ? "bg-white text-blue-700 shadow" : "text-slate-500 disabled:opacity-40"}`}>Задняя</button></div>{!hasBack && <Button disabled={saving} variant="outline" onClick={() => void enableBack()}><Plus /> Задняя сторона</Button>}<Button variant="outline" onClick={() => setEditRack(activeRack)}><Pencil /> Изменить</Button><Button variant="outline" className="text-red-600" onClick={() => void deleteRack()}><Trash2 /> Удалить</Button></div>
+            <div className="flex flex-wrap items-center gap-2"><div className="rounded-xl border border-black/10 bg-slate-100 p-1"><button type="button" onClick={() => setSide("front")} className={`cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold ${side === "front" ? "bg-white text-blue-700 shadow" : "text-slate-500"}`}>Лицевая</button><button type="button" disabled={!hasBack} onClick={() => setSide("back")} className={`cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold ${side === "back" ? "bg-white text-blue-700 shadow" : "text-slate-500 disabled:opacity-40"}`}>Задняя</button></div>{highlightCellId && <Button variant="outline" onClick={() => setHighlightCellId(null)}>Снять подсветку</Button>}{!hasBack && <Button disabled={saving} variant="outline" onClick={() => void enableBack()}><Plus /> Задняя сторона</Button>}<Button variant="outline" onClick={() => setEditRack(activeRack)}><Pencil /> Изменить</Button><Button variant="outline" className="text-red-600" onClick={() => void deleteRack()}><Trash2 /> Удалить</Button></div>
           </div>
-          <div className="p-3 sm:p-5"><RackThreeView rack={activeRack} cells={rackCells} stocks={data.stocks} side={side} onCellClick={openCell} /></div>
+          <div className="p-3 sm:p-5"><RackThreeView rack={activeRack} cells={rackCells} stocks={data.stocks} side={side} onCellClick={openCell} highlightCellId={highlightCellId} /></div>
         </section>}
       </div>
 
@@ -197,30 +244,13 @@ export default function RackLayoutPage() {
         <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-3xl">
           {selectedCell && <>
             <DialogHeader><DialogTitle>Ячейка {selectedCell.code}</DialogTitle><DialogDescription>{selectedCell.side === "front" ? "Лицевая" : "Задняя"} сторона · полка {selectedCell.rowIndex + 1} · место {String.fromCharCode(65 + selectedCell.columnIndex)}</DialogDescription></DialogHeader>
-
-            <div className="mt-4 grid gap-4 sm:grid-cols-[150px_1fr]">
-              <div className="flex flex-col items-center justify-center rounded-2xl border bg-white p-3"><QRCodeSVG value={selectedCell.code} size={116} /><b className="mt-2 font-mono text-sm">{selectedCell.code}</b></div>
-              <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-slate-50 p-4"><div className="text-xs text-slate-500">Позиций</div><b className="mt-1 block text-2xl">{selectedStocks.length}</b></div><div className="rounded-2xl bg-slate-50 p-4"><div className="text-xs text-slate-500">Операций</div><b className="mt-1 block text-2xl">{selectedHistory.length}</b></div><div className="rounded-2xl bg-slate-50 p-4"><div className="text-xs text-slate-500">Статус</div><b className="mt-1 block text-lg">{selectedStocks.length ? "Занята" : "Свободна"}</b></div></div>
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Button size="sm" variant={cellMode === "overview" ? "default" : "outline"} onClick={() => setCellMode("overview")}><Boxes /> Содержимое</Button>
-              <Button size="sm" variant={cellMode === "add" ? "default" : "outline"} onClick={() => setCellMode("add")}><Plus /> Добавить</Button>
-              <Button size="sm" variant={cellMode === "move" ? "default" : "outline"} disabled={!selectedStocks.length} onClick={() => setCellMode("move")}><ArrowRightLeft /> Переместить</Button>
-              <Button size="sm" variant={cellMode === "correct" ? "default" : "outline"} disabled={!selectedStocks.length} onClick={() => setCellMode("correct")}><SlidersHorizontal /> Корректировать</Button>
-              <Button size="sm" variant={cellMode === "history" ? "default" : "outline"} onClick={() => setCellMode("history")}><History /> История</Button>
-            </div>
-
+            <div className="mt-4 grid gap-4 sm:grid-cols-[150px_1fr]"><div className="flex flex-col items-center justify-center rounded-2xl border bg-white p-3"><QRCodeSVG value={selectedCell.code} size={116} /><b className="mt-2 font-mono text-sm">{selectedCell.code}</b></div><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl bg-slate-50 p-4"><div className="text-xs text-slate-500">Позиций</div><b className="mt-1 block text-2xl">{selectedStocks.length}</b></div><div className="rounded-2xl bg-slate-50 p-4"><div className="text-xs text-slate-500">Операций</div><b className="mt-1 block text-2xl">{selectedHistory.length}</b></div><div className="rounded-2xl bg-slate-50 p-4"><div className="text-xs text-slate-500">Статус</div><b className="mt-1 block text-lg">{selectedStocks.length ? "Занята" : "Свободна"}</b></div></div></div>
+            <div className="mt-5 flex flex-wrap gap-2"><Button size="sm" variant={cellMode === "overview" ? "default" : "outline"} onClick={() => setCellMode("overview")}><Boxes /> Содержимое</Button><Button size="sm" variant={cellMode === "add" ? "default" : "outline"} onClick={() => setCellMode("add")}><Plus /> Добавить</Button><Button size="sm" variant={cellMode === "move" ? "default" : "outline"} disabled={!selectedStocks.length} onClick={() => setCellMode("move")}><ArrowRightLeft /> Переместить</Button><Button size="sm" variant={cellMode === "correct" ? "default" : "outline"} disabled={!selectedStocks.length} onClick={() => setCellMode("correct")}><SlidersHorizontal /> Корректировать</Button><Button size="sm" variant={cellMode === "history" ? "default" : "outline"} onClick={() => setCellMode("history")}><History /> История</Button></div>
             {cellMode === "overview" && <section className="mt-4"><div className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Содержимое ячейки</div>{selectedStocks.length ? <div className="space-y-2">{selectedStocks.map((stock) => <div key={stock.productId} className="rounded-xl border bg-slate-50 p-4"><div className="flex items-start gap-3"><Boxes size={18} className="mt-0.5 text-blue-600" /><div className="flex-1"><div className="font-semibold">{stock.productName}</div><div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-sm"><span className="font-mono text-slate-500">{stock.sku} · {stock.barcode}</span><b className="text-base">{qty(stock.quantity)} {stock.unit}</b></div></div></div></div>)}</div> : <div className="rounded-xl bg-slate-50 p-5 text-sm text-slate-500">Ячейка свободна. Нажмите «Добавить», чтобы разместить материал.</div>}</section>}
-
             {cellMode === "add" && <section className="mt-4 rounded-2xl border p-4"><h3 className="font-bold">Добавить материал в эту ячейку</h3><div className="mt-4 grid gap-3 sm:grid-cols-[1fr_180px]"><NativeSelect value={addProductId} onChange={(event) => setAddProductId(event.target.value)}><NativeSelectOption value="">Выберите материал</NativeSelectOption>{data.products.map((product) => <NativeSelectOption key={product.id} value={product.id}>{product.name} · {product.sku}</NativeSelectOption>)}</NativeSelect><Input type="number" min="0.001" step="any" value={addQuantity} onChange={(event) => setAddQuantity(event.target.value)} placeholder="Количество" /></div><Button className="accent-button mt-4" disabled={saving || !addProductId || Number(addQuantity) <= 0} onClick={() => void addStock()}>{saving ? <Loader2 className="animate-spin" /> : <Plus />} Добавить в {selectedCell.code}</Button></section>}
-
             {cellMode === "move" && <section className="mt-4 rounded-2xl border p-4"><h3 className="font-bold">Переместить из {selectedCell.code}</h3><div className="mt-4 grid gap-3 sm:grid-cols-2"><div><Label>Материал</Label><NativeSelect className="mt-2 w-full" value={moveProductId} onChange={(event) => { setMoveProductId(event.target.value); setMoveQuantity(""); }}><NativeSelectOption value="">Выберите</NativeSelectOption>{selectedStocks.map((stock) => <NativeSelectOption key={stock.productId} value={stock.productId}>{stock.productName} · доступно {qty(stock.quantity)}</NativeSelectOption>)}</NativeSelect></div><div><Label>Новая ячейка</Label><NativeSelect className="mt-2 w-full" value={moveCellId} onChange={(event) => setMoveCellId(event.target.value)}><NativeSelectOption value="">Выберите</NativeSelectOption>{data.cells.filter((cell) => !cell.blocked && cell.id !== selectedCell.id).map((cell) => <NativeSelectOption key={cell.id} value={cell.id}>{cell.code}</NativeSelectOption>)}</NativeSelect></div><div><Label>Количество</Label><Input className="mt-2" type="number" min="0.001" step="any" value={moveQuantity} onChange={(event) => setMoveQuantity(event.target.value)} /></div></div><Button className="mt-4" disabled={saving || !moveProductId || !moveCellId || Number(moveQuantity) <= 0} onClick={() => void moveStock()}><ArrowRightLeft /> Переместить</Button></section>}
-
             {cellMode === "correct" && <section className="mt-4 rounded-2xl border border-orange-200 bg-orange-50/40 p-4"><h3 className="font-bold">Корректировка фактического остатка</h3><p className="mt-1 text-sm text-slate-600">История не стирается: система запишет разницу отдельным движением и сохранит причину.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><div><Label>Материал</Label><NativeSelect className="mt-2 w-full" value={correctProductId} onChange={(event) => { const id = event.target.value; setCorrectProductId(id); const stock = selectedStocks.find((item) => item.productId === id); setCorrectQuantity(stock ? String(stock.quantity) : ""); }}><NativeSelectOption value="">Выберите</NativeSelectOption>{selectedStocks.map((stock) => <NativeSelectOption key={stock.productId} value={stock.productId}>{stock.productName} · сейчас {qty(stock.quantity)}</NativeSelectOption>)}</NativeSelect></div><div><Label>Новое фактическое количество</Label><Input className="mt-2" type="number" min="0" step="any" value={correctQuantity} onChange={(event) => setCorrectQuantity(event.target.value)} /></div><div className="sm:col-span-2"><Label>Причина *</Label><Input className="mt-2" value={correctReason} onChange={(event) => setCorrectReason(event.target.value)} placeholder="Например: пересчёт, ошибка при размещении, недостача" /></div></div><Button className="mt-4" disabled={saving || !correctProductId || Number(correctQuantity) < 0 || !correctReason.trim()} onClick={() => void correctStock()}><SlidersHorizontal /> Сохранить корректировку</Button></section>}
-
             {cellMode === "history" && <section className="mt-4"><div className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">История этой ячейки</div>{selectedHistory.length ? <div className="space-y-2">{selectedHistory.map((movement) => <div key={movement.id} className="rounded-xl border bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><b>{movement.type}</b><div className="text-sm text-slate-600">{movement.productName}</div></div><div className={`font-bold ${movement.quantity < 0 ? "text-red-600" : "text-emerald-700"}`}>{movement.quantity > 0 ? "+" : ""}{qty(movement.quantity)} {movement.unit}</div></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-slate-500"><span>{movement.operator}{movement.comment ? ` · ${movement.comment}` : ""}</span><span>{new Date(movement.createdAt.replace(" ", "T") + "Z").toLocaleString("ru-RU")}</span></div></div>)}</div> : <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">Операций по этой ячейке пока нет.</div>}</section>}
-
             <div className="mt-4 flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-sm text-blue-900"><MapPin size={16} />QR относится именно к этому физическому месту.</div>
             <DialogFooter><Button variant="outline" onClick={() => setSelectedCell(null)}>Закрыть</Button></DialogFooter>
           </>}
