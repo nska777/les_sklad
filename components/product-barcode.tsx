@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Barcode from "react-barcode";
 import { Printer, X } from "lucide-react";
 
@@ -12,13 +13,13 @@ type ProductBarcodeProps = {
   className?: string;
 };
 
-function findNearbyProductName(button: HTMLButtonElement | null) {
-  if (!button) return "";
-  const article = button.closest("article");
+function findNearbyProductName(trigger: HTMLElement | null) {
+  if (!trigger) return "";
+  const article = trigger.closest("article");
   const articleName = article?.querySelector(".break-words.font-bold")?.textContent?.trim();
   if (articleName) return articleName;
 
-  let node: HTMLElement | null = button.parentElement;
+  let node: HTMLElement | null = trigger.parentElement;
   for (let level = 0; node && level < 6; level += 1, node = node.parentElement) {
     const marked = node.querySelector<HTMLElement>("[data-product-name]")?.textContent?.trim();
     if (marked) return marked;
@@ -63,11 +64,7 @@ function openBarcodePrintPreview(value: string, name: string, svgMarkup: string)
   .code { margin-top: 4mm; font: 700 17pt ui-monospace, SFMono-Regular, Menlo, monospace; }
   .barcode { margin-top: 12mm; display: flex; justify-content: center; overflow: hidden; }
   .barcode svg { width: 145mm !important; max-width: 100% !important; height: auto !important; }
-  @media print {
-    .toolbar { display: none !important; }
-    .sheet { min-height: auto; }
-    .label { border: 0; }
-  }
+  @media print { .toolbar { display: none !important; } .sheet { min-height: auto; } .label { border: 0; } }
 </style>
 </head>
 <body>
@@ -93,12 +90,15 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
   const safeValue = value.trim();
   const explicitName = productName?.trim() || name?.trim() || "";
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [resolvedName, setResolvedName] = useState(explicitName);
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const largeBarcodeRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
-    setResolvedName(explicitName || findNearbyProductName(buttonRef.current));
+    setResolvedName(explicitName || findNearbyProductName(triggerRef.current));
   }, [explicitName]);
 
   useEffect(() => {
@@ -120,16 +120,29 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
     openBarcodePrintPreview(safeValue, shownName, svg.outerHTML);
   };
 
+  const openBarcode = () => {
+    setResolvedName(explicitName || findNearbyProductName(triggerRef.current));
+    setOpen(true);
+  };
+
   return (
     <>
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={() => {
-          setResolvedName(explicitName || findNearbyProductName(buttonRef.current));
-          setOpen(true);
+      <div
+        ref={triggerRef}
+        role="button"
+        tabIndex={0}
+        onClick={(event) => {
+          event.stopPropagation();
+          openBarcode();
         }}
-        className={`group block w-full cursor-zoom-in overflow-hidden rounded-xl border border-black/10 bg-white px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md ${className}`}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            openBarcode();
+          }
+        }}
+        className={`group block w-full cursor-zoom-in overflow-hidden rounded-xl border border-black/10 bg-white px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${className}`}
         aria-label={`Увеличить штрихкод ${safeValue}`}
       >
         <div className="mb-1 flex items-center justify-between gap-2">
@@ -138,36 +151,14 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
         </div>
         {shownName && <div className="mb-1 truncate text-center text-xs font-semibold text-slate-700">{shownName}</div>}
         <div className="flex max-w-full justify-center overflow-hidden">
-          <Barcode
-            value={safeValue}
-            format="CODE128"
-            width={compact ? 1.25 : 1.55}
-            height={compact ? 38 : 52}
-            margin={0}
-            fontSize={compact ? 11 : 12}
-            displayValue
-            background="transparent"
-          />
+          <Barcode value={safeValue} format="CODE128" width={compact ? 1.25 : 1.55} height={compact ? 38 : 52} margin={0} fontSize={compact ? 11 : 12} displayValue background="transparent" />
         </div>
-      </button>
+      </div>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Штрихкод ${safeValue}`}
-        >
-          <div className="relative w-full max-w-3xl rounded-[28px] border border-white/40 bg-white p-5 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8">
-            <button
-              type="button"
-              onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
-              onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpen(false); }}
-              className="absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600 shadow-sm transition hover:bg-slate-200 active:scale-95"
-              aria-label="Закрыть"
-            >
-              <X size={22} />
-            </button>
+      {mounted && open && createPortal(
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-label={`Штрихкод ${safeValue}`}>
+          <div className="relative w-full max-w-3xl rounded-[28px] border border-white/40 bg-white p-5 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8" onClick={(event) => event.stopPropagation()}>
+            <button type="button" onClick={() => setOpen(false)} className="absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600 shadow-sm transition hover:bg-slate-200 active:scale-95" aria-label="Закрыть"><X size={22} /></button>
             <div className="mb-5 pr-14">
               <div className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Штрихкод материала</div>
               {shownName && <div className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{shownName}</div>}
@@ -175,33 +166,15 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
             </div>
             <div ref={largeBarcodeRef} className="flex min-h-[220px] flex-col items-center justify-center gap-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-5 sm:min-h-[300px] sm:p-8">
               {shownName && <div className="max-w-full text-center text-lg font-bold text-slate-900 sm:text-2xl">{shownName}</div>}
-              <Barcode
-                value={safeValue}
-                format="CODE128"
-                width={2.7}
-                height={150}
-                margin={0}
-                fontSize={22}
-                displayValue
-                background="transparent"
-              />
+              <Barcode value={safeValue} format="CODE128" width={2.7} height={150} margin={0} fontSize={22} displayValue background="transparent" />
             </div>
             <div className="mt-5 flex justify-center">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  printPreview();
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
-              >
-                <Printer size={18} /> Предпросмотр и печать
-              </button>
+              <button type="button" onClick={printPreview} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"><Printer size={18} /> Предпросмотр и печать</button>
             </div>
             <div className="mt-3 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
