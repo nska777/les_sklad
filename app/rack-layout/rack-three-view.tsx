@@ -29,13 +29,13 @@ function labelSprite(text: string, accent = false, widthScale = 1) {
   texture.colorSpace = THREE.SRGBColorSpace;
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(2.3 * widthScale, 0.72, 1);
+  sprite.scale.set(2.3 * widthScale, 0.86, 1);
   return sprite;
 }
 
 export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack: Rack; cells: Cell[]; stocks: Stock[]; side: "front" | "back"; onCellClick: (cell: Cell) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef<{ camera?: THREE.PerspectiveCamera; controls?: OrbitControls; cameraDistance?: number }>({});
+  const stateRef = useRef<{ camera?: THREE.PerspectiveCamera; controls?: OrbitControls; cameraDistance?: number; targetY?: number }>({});
 
   useEffect(() => {
     const host = hostRef.current;
@@ -44,20 +44,21 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     host.innerHTML = "";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf8fafc);
-    scene.fog = new THREE.Fog(0xf8fafc, 22, 42);
+    scene.fog = new THREE.Fog(0xf8fafc, 24, 46);
 
-    // Делаем стеллаж заведомо широким: для 4 ячеек он занимает почти всю сцену.
+    // Стеллаж остаётся широким, но теперь полки заметно выше — без эффекта "сплющенности".
     const targetWidth = Math.min(18, Math.max(14.5, rack.columns * 2.9));
     const columnW = targetWidth / rack.columns;
-    const shelfGap = 1.22;
-    const depth = 1.85;
+    const shelfGap = 1.62;
+    const depth = 1.95;
     const width = rack.columns * columnW;
-    const height = rack.rows * shelfGap + 0.45;
+    const height = rack.rows * shelfGap + 0.58;
     const x0 = -width / 2;
 
-    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-    const cameraDistance = Math.max(10.5, height * 1.75);
-    camera.position.set(0, Math.max(3.9, height * 0.62), side === "front" ? cameraDistance : -cameraDistance);
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
+    const cameraDistance = Math.max(11.2, height * 1.48);
+    const targetY = height * 0.46;
+    camera.position.set(0, Math.max(4.6, height * 0.61), side === "front" ? cameraDistance : -cameraDistance);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -73,25 +74,25 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
-    controls.minDistance = 7;
-    controls.maxDistance = 30;
+    controls.minDistance = 8;
+    controls.maxDistance = 34;
     controls.maxPolarAngle = Math.PI / 2.02;
-    controls.target.set(0, height * 0.48, 0);
+    controls.target.set(0, targetY, 0);
 
-    stateRef.current = { camera, controls, cameraDistance };
+    stateRef.current = { camera, controls, cameraDistance, targetY };
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x64748b, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 3.4);
-    key.position.set(8, 12, 9);
+    key.position.set(8, 14, 9);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     scene.add(key);
     const rim = new THREE.DirectionalLight(0xbfd7ff, 1.5);
-    rim.position.set(-9, 6, -9);
+    rim.position.set(-9, 8, -9);
     scene.add(rim);
 
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.max(30, width + 10), 20),
+      new THREE.PlaneGeometry(Math.max(30, width + 10), 22),
       new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.92, metalness: 0.03 }),
     );
     floor.rotation.x = -Math.PI / 2;
@@ -144,7 +145,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
         emissive: occupied ? 0x102a5c : 0x000000,
         emissiveIntensity: occupied ? 0.18 : 0,
       });
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(columnW - 0.22, shelfGap - 0.18, 0.16), cellMaterial);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(columnW - 0.22, shelfGap - 0.24, 0.16), cellMaterial);
       const x = x0 + cell.columnIndex * columnW + columnW / 2;
       const y = cell.rowIndex * shelfGap + shelfGap / 2 + 0.09;
       const z = cell.side === "front" ? depth / 2 + 0.12 : -depth / 2 - 0.12;
@@ -168,8 +169,8 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
     }
 
     const title = labelSprite(`${rack.code}\n${rack.name}`, true, 1.35);
-    title.position.set(0, height + 0.82, 0);
-    title.scale.set(4.6, 1, 1);
+    title.position.set(0, height + 0.92, 0);
+    title.scale.set(4.6, 1.12, 1);
     rackGroup.add(title);
 
     const raycaster = new THREE.Raycaster();
@@ -200,7 +201,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
 
     const resize = () => {
       const widthPx = Math.max(320, host.clientWidth);
-      const heightPx = Math.max(520, host.clientHeight);
+      const heightPx = Math.max(620, host.clientHeight);
       camera.aspect = widthPx / heightPx;
       camera.updateProjectionMatrix();
       renderer.setSize(widthPx, heightPx, false);
@@ -242,14 +243,16 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick }: { rack
   useEffect(() => {
     const camera = stateRef.current.camera;
     const controls = stateRef.current.controls;
-    const cameraDistance = stateRef.current.cameraDistance || 11;
+    const cameraDistance = stateRef.current.cameraDistance || 12;
+    const targetY = stateRef.current.targetY || rack.rows * 0.75;
     if (!camera || !controls) return;
-    camera.position.set(0, Math.max(3.9, rack.rows * 0.76), side === "front" ? cameraDistance : -cameraDistance);
+    camera.position.set(0, Math.max(4.6, rack.rows * 1.03), side === "front" ? cameraDistance : -cameraDistance);
+    controls.target.set(0, targetY, 0);
     controls.update();
   }, [side, rack.rows]);
 
   return <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-inner">
-    <div ref={hostRef} className="h-[68vh] min-h-[560px] w-full" />
+    <div ref={hostRef} className="h-[74vh] min-h-[640px] w-full" />
     <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">ЛКМ + перетаскивание — вращение · колесо — масштаб · клик по ячейке — открыть</div>
   </div>;
 }
