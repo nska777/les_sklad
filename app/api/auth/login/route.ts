@@ -1,9 +1,27 @@
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { authenticateUser, createSessionToken } from "@/lib/warehouse-auth";
+import { getDb } from "@/db";
+import { warehouseUsers } from "@/db/schema";
+import { authenticateUser, createSessionToken, type WarehouseSession } from "@/lib/warehouse-auth";
+import { verifyPassword } from "@/lib/passwords";
 
 export async function POST(request: Request) {
   const { username, password } = await request.json() as { username?: string; password?: string };
-  const session = authenticateUser(username || "admin", password || "");
+  const login = String(username || "admin").trim().toLowerCase();
+  const pass = String(password || "");
+  let session: WarehouseSession | null = null;
+
+  try {
+    const db = await getDb();
+    const [user] = await db.select().from(warehouseUsers).where(eq(warehouseUsers.username, login)).limit(1);
+    if (user && user.active && await verifyPassword(pass, user.passwordSalt, user.passwordHash)) {
+      session = { username: user.username, name: user.name, role: user.role as WarehouseSession["role"] };
+    }
+  } catch {
+    // Если таблица/БД временно недоступна, остаётся аварийный env-вход.
+  }
+
+  session ??= authenticateUser(login, pass);
   if (!session) {
     return NextResponse.json({ error: "Неверный логин или пароль" }, { status: 401 });
   }
