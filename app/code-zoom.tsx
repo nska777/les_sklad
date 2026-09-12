@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Printer, X } from "lucide-react";
 
 type Preview = { markup: string; label: string } | null;
 
@@ -23,6 +23,55 @@ function nearbyLabel(svg: SVGSVGElement) {
   return text.slice(0, 80) || "QR-код";
 }
 
+function openQrPrintPreview(preview: NonNullable<Preview>) {
+  const printWindow = window.open("", "_blank", "width=900,height=900");
+  if (!printWindow) return;
+
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>QR-код ${preview.label.replace(/[<>]/g, "")}</title>
+<style>
+  @page { size: A4 portrait; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #111827; background: #fff; }
+  .toolbar { position: sticky; top: 0; display: flex; justify-content: center; gap: 10px; padding: 14px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
+  .toolbar button { border: 0; border-radius: 12px; padding: 11px 18px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .print { background: #ff6b2c; color: white; }
+  .close { background: #e5e7eb; color: #111827; }
+  .sheet { width: 100%; min-height: calc(297mm - 28mm); display: flex; align-items: center; justify-content: center; }
+  .label { width: 150mm; max-width: 100%; text-align: center; padding: 12mm; border: 1px solid #dbe3ee; border-radius: 6mm; }
+  .kind { font-size: 13pt; letter-spacing: .18em; text-transform: uppercase; color: #64748b; font-weight: 700; }
+  .code { margin-top: 4mm; font: 700 18pt ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .qr { margin: 10mm auto 0; width: 105mm; height: 105mm; max-width: 100%; }
+  .qr svg { width: 100% !important; height: 100% !important; display: block; }
+  @media print {
+    .toolbar { display: none !important; }
+    .sheet { min-height: auto; }
+    .label { border: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="print" onclick="window.print()">Распечатать</button>
+    <button class="close" onclick="window.close()">Закрыть</button>
+  </div>
+  <main class="sheet">
+    <section class="label">
+      <div class="kind">QR-код ячейки</div>
+      <div class="code">${preview.label.replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char] || char))}</div>
+      <div class="qr">${preview.markup}</div>
+    </section>
+  </main>
+</body>
+</html>`);
+  printWindow.document.close();
+  printWindow.focus();
+}
+
 export function CodeZoom() {
   const [preview, setPreview] = useState<Preview>(null);
 
@@ -30,8 +79,6 @@ export function CodeZoom() {
     const onClick = (event: MouseEvent) => {
       const target = event.target;
 
-      // Закрытие делаем прямо на capture-уровне, чтобы никакие SVG,
-      // Dialog/Radix-обёртки и вложенные обработчики не могли перехватить крестик.
       if (target instanceof Element && target.closest("[data-code-zoom-close]")) {
         event.preventDefault();
         event.stopPropagation();
@@ -113,7 +160,20 @@ export function CodeZoom() {
             dangerouslySetInnerHTML={{ __html: preview.markup }}
           />
         </div>
-        <div className="mt-4 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
+        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openQrPrintPreview(preview);
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
+          >
+            <Printer size={18} /> Предпросмотр и печать
+          </button>
+        </div>
+        <div className="mt-3 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
       </div>
     </div>
   );
