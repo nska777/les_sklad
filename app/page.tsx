@@ -245,7 +245,6 @@ export default function Home() {
           <TabsTrigger value="issue" className="px-3 py-2"><ArrowUpFromLine /> Выдача</TabsTrigger>
           <TabsTrigger value="layout" className="px-3 py-2"><Grid3X3 /> Стеллажи</TabsTrigger>
           <TabsTrigger value="products" className="px-3 py-2"><Boxes /> Материалы</TabsTrigger>
-          <TabsTrigger value="labels" className="px-3 py-2"><QrCode /> Этикетки</TabsTrigger>
           <TabsTrigger value="history" className="px-3 py-2"><History /> Движения</TabsTrigger>
           <TabsTrigger value="activity" className="px-3 py-2"><Activity /> Журнал</TabsTrigger>
           <TabsTrigger value="install" className="px-3 py-2"><Smartphone /> Установка</TabsTrigger>
