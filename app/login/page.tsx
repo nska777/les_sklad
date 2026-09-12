@@ -20,7 +20,7 @@ export default function LoginPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: form.get("username"), password: form.get("password") }),
     });
-    if (response.ok) window.location.href = "/";
+    if (response.ok) window.location.href = "/warehouse";
     else {
       const body = await response.json() as { error?: string };
       setError(body.error || "Не удалось войти");
