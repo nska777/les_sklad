@@ -36,6 +36,8 @@ export default function MaterialsPage() {
   const [amount, setAmount] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetConfirmation, setResetConfirmation] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -113,6 +115,28 @@ export default function MaterialsPage() {
     } finally { setSaving(false); }
   };
 
+  const deleteOneMaterial = async () => {
+    if (user?.role !== "admin") return toast.error("Только администратор может удалить материал");
+    if (!deleteTarget) return;
+    if (deleteConfirmation.trim().toUpperCase() !== "УДАЛИТЬ") return toast.error("Введите точную фразу: УДАЛИТЬ");
+    setSaving(true);
+    try {
+      const response = await fetch("/api/materials/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: deleteTarget.id, confirmation: deleteConfirmation }),
+      });
+      const result = await response.json() as { error?: string; deletedProduct?: string; deletedQuantity?: number; deletedStockPositions?: number };
+      if (!response.ok) throw new Error(result.error || "Не удалось удалить материал");
+      toast.success("Материал удалён", { description: `${result.deletedProduct || deleteTarget.name} · удалено остатка ${qty(Number(result.deletedQuantity || 0))}` });
+      setDeleteTarget(null);
+      setDeleteConfirmation("");
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось удалить материал");
+    } finally { setSaving(false); }
+  };
+
   const deleteAllMaterials = async () => {
     if (user?.role !== "admin") return toast.error("Только администратор может удалить все материалы");
     if (resetConfirmation.trim().toUpperCase() !== "УДАЛИТЬ ВСЕ") return toast.error("Введите точную фразу: УДАЛИТЬ ВСЕ");
@@ -162,7 +186,10 @@ export default function MaterialsPage() {
             const total = stocks.reduce((sum, stock) => sum + stock.quantity, 0);
             const barcodeValue = product.barcode || product.sku;
             return <article key={product.id} className="grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(230px,1.1fr)_minmax(220px,280px)_140px_minmax(340px,1.8fr)] xl:items-start">
-              <div className="min-w-0"><div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Boxes size={20} /></div><div className="min-w-0"><div className="break-words font-bold">{product.name}</div><div className="mt-1 text-xs text-slate-500">RL-код</div><div className="mt-0.5 font-mono text-sm font-semibold text-slate-700">{product.sku}</div></div></div></div>
+              <div className="min-w-0">
+                <div className="flex items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><Boxes size={20} /></div><div className="min-w-0"><div className="break-words font-bold">{product.name}</div><div className="mt-1 text-xs text-slate-500">RL-код</div><div className="mt-0.5 font-mono text-sm font-semibold text-slate-700">{product.sku}</div></div></div>
+                {user?.role === "admin" && <Button size="sm" variant="outline" className="mt-3 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800" onClick={() => { setDeleteTarget(product); setDeleteConfirmation(""); }}><Trash2 size={15} /> Удалить материал</Button>}
+              </div>
               <ProductBarcode value={barcodeValue} compact className="w-full" />
               <div className="rounded-2xl bg-slate-50 p-3 xl:text-right"><div className="text-xs text-slate-500">Всего на складе</div><div className="mt-1 text-2xl font-bold">{qty(total)} <span className="text-sm font-medium text-slate-500">{product.unit}</span></div></div>
               <div><div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Места хранения</div>{stocks.length ? <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">{stocks.map((stock) => {
@@ -188,6 +215,25 @@ export default function MaterialsPage() {
           <div><Label>Количество</Label><Input className="mt-2" type="number" min="0.001" max={move.max} step="any" value={amount} onChange={(event) => setAmount(event.target.value)} /></div>
         </div>
         <DialogFooter className="mt-6"><Button variant="outline" onClick={() => setMove(null)}>Отмена</Button><Button disabled={saving || !cellId || Number(amount) <= 0 || Number(amount) > move.max} onClick={() => void saveMove()}>{saving ? <Loader2 className="animate-spin" /> : <ArrowRightLeft />} Переместить</Button></DialogFooter></>}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteConfirmation(""); } }}>
+      <DialogContent className="sm:max-w-lg">
+        {deleteTarget && <>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700"><AlertTriangle size={22} /> Удалить материал?</DialogTitle>
+            <DialogDescription>Будет удалён только выбранный материал <b>{deleteTarget.name}</b> ({deleteTarget.sku}), его остатки во всех ячейках, движения и строки складских документов. Стеллажи и остальные материалы останутся. Связь с 1С будет сброшена.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+            Остаток перед удалением: <b>{qty(data.stocks.filter((stock) => stock.productId === deleteTarget.id).reduce((sum, stock) => sum + stock.quantity, 0))} {deleteTarget.unit}</b>.
+          </div>
+          <div className="mt-4"><Label>Для подтверждения введите «УДАЛИТЬ»</Label><Input autoFocus value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} className="mt-2" placeholder="УДАЛИТЬ" /></div>
+          <DialogFooter className="mt-6 flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteConfirmation(""); }}>Отмена</Button>
+            <Button className="bg-red-600 text-white hover:bg-red-700" disabled={saving || deleteConfirmation.trim().toUpperCase() !== "УДАЛИТЬ"} onClick={() => void deleteOneMaterial()}>{saving ? <Loader2 className="animate-spin" /> : <Trash2 />} Удалить материал</Button>
+          </DialogFooter>
+        </>}
       </DialogContent>
     </Dialog>
 
