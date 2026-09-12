@@ -58,10 +58,18 @@ export async function GET(request: Request) {
       SELECT om.id, om.source_row AS "sourceRow", om.name,
         om.quantity_1c AS "quantity1c", om.reserved_1c AS "reserved1c", om.available_1c AS "available1c",
         om.linked_product_id AS "linkedProductId", p.sku AS "internalCode", p.barcode,
-        COALESCE(SUM(s.quantity), 0)::double precision AS "placedQuantity"
+        COALESCE(SUM(s.quantity), 0)::double precision AS "placedQuantity",
+        COALESCE(
+          json_agg(
+            json_build_object('cellId', c.id, 'cellCode', c.code, 'quantity', s.quantity)
+            ORDER BY c.code
+          ) FILTER (WHERE s.quantity > 0 AND c.id IS NOT NULL),
+          '[]'::json
+        ) AS locations
       FROM onec_materials om
       LEFT JOIN products p ON p.id = om.linked_product_id
       LEFT JOIN stocks s ON s.product_id = p.id
+      LEFT JOIN cells c ON c.id = s.cell_id
       WHERE ${q ? sql`om.name ILIKE ${pattern}` : sql`TRUE`}
       GROUP BY om.id, om.source_row, om.name, om.quantity_1c, om.reserved_1c, om.available_1c, om.linked_product_id, p.sku, p.barcode
       ORDER BY ${q ? sql`CASE WHEN om.name ILIKE ${prefix} THEN 0 ELSE 1 END, om.name` : sql`om.name`}
@@ -112,7 +120,7 @@ export async function POST(request: Request) {
 
     await db.insert(movements).values({ id: crypto.randomUUID(), type: "Первичный учёт из 1С", productId, cellId, quantity, operator, source: "onec-reference", comment: "Размещение по справочнику 1С" });
     await db.insert(activityLogs).values({ id: crypto.randomUUID(), action: "Размещение из 1С", entityType: "Материал", entityId: productId, entityName: `${material.name} (${code})`, details: `${quantity} шт. → ${cell.code}`, operator });
-    return Response.json({ ok: true, productId, internalCode: code, barcode: code });
+    return Response.json({ ok: true, productId, internalCode: code, barcode: code, cellCode: cell.code, quantity });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Не удалось разместить материал" }, { status: 500 });
   }
