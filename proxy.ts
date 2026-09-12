@@ -3,7 +3,20 @@ import { verifySessionToken } from "@/lib/warehouse-auth";
 
 export async function proxy(request: NextRequest) {
   const token = request.cookies.get("warehouse_session")?.value;
-  if (await verifySessionToken(token)) return NextResponse.next();
+  const session = await verifySessionToken(token);
+
+  if (session) {
+    if (request.nextUrl.pathname.startsWith("/api/") && request.method !== "GET" && request.method !== "HEAD" && session.role === "viewer") {
+      return NextResponse.json({ error: "Для роли «Просмотр» изменения запрещены" }, { status: 403 });
+    }
+
+    const headers = new Headers(request.headers);
+    headers.set("x-warehouse-username", session.username);
+    headers.set("x-warehouse-user", session.name);
+    headers.set("x-warehouse-role", session.role);
+    return NextResponse.next({ request: { headers } });
+  }
+
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Требуется вход" }, { status: 401 });
   }
