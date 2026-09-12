@@ -152,9 +152,51 @@ export default function RackLayoutPage() {
   const deleteRack = async () => {
     if (!activeRack || !confirm(`Удалить стеллаж ${activeRack.name} (${activeRack.code})?`)) return;
     setSaving(true);
-    try { await apiAction({ action: "deleteRack", rackId: activeRack.id, operator }); await load(); setSide("front"); setHighlightCellId(null); toast.success("Стеллаж удалён"); }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Не удалось удалить"); }
-    finally { setSaving(false); }
+    try {
+      const response = await fetch("/api/rack-layout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "deleteRack", rackId: activeRack.id, operator }),
+      });
+      const result = await response.json() as { error?: string; hasStock?: boolean; positions?: number; totalQuantity?: number };
+
+      if (response.ok) {
+        await load();
+        setSide("front");
+        setHighlightCellId(null);
+        toast.success("Стеллаж удалён");
+        return;
+      }
+
+      if (response.status === 409 && result.hasStock) {
+        const deleteWithContents = window.confirm(
+          `В стеллаже есть материал: ${result.positions || 0} позиций.\n\nОК — удалить стеллаж вместе с содержимым (только администратор).\nОтмена — перейти к перемещению остатков.`
+        );
+
+        if (!deleteWithContents) {
+          window.location.assign(`/transfer?rack=${encodeURIComponent(activeRack.id)}`);
+          return;
+        }
+
+        const forceResponse = await fetch("/api/rack-layout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "deleteRack", rackId: activeRack.id, operator, force: true }),
+        });
+        const forceResult = await forceResponse.json() as { error?: string; removedPositions?: number };
+        if (!forceResponse.ok) throw new Error(forceResult.error || "Не удалось удалить стеллаж вместе с содержимым");
+
+        await load();
+        setSide("front");
+        setHighlightCellId(null);
+        toast.success("Стеллаж удалён вместе с содержимым", { description: `Списано позиций: ${forceResult.removedPositions || 0}. История сохранена.` });
+        return;
+      }
+
+      throw new Error(result.error || "Не удалось удалить стеллаж");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось удалить");
+    } finally { setSaving(false); }
   };
 
   const enableBack = async () => {
