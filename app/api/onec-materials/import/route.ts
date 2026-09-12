@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 const clean = (value: unknown) => String(value ?? "").trim();
 const keyOf = (value: string) => value.trim().toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
+const isNumericText = (value: string) => /^[-+]?\d+(?:[.,]\d+)?$/.test(value.replace(/\s/g, ""));
 
 function rowsOf<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
@@ -58,7 +59,64 @@ type ParsedItem = {
   available1c: number;
 };
 
-function parseWorkbook(buffer: ArrayBuffer): ParsedItem[] {
+type Detection = {
+  nameColumn: number;
+  quantityColumn: number;
+  reservedColumn: number;
+  availableColumn: number;
+};
+
+function textLike(value: unknown) {
+  const text = clean(value);
+  return text.length >= 3 && !isNumericText(text);
+}
+
+function detectColumns(rows: unknown[][]): Detection {
+  const maxColumns = Math.min(12, Math.max(0, ...rows.slice(0, 250).map((row) => row.length)));
+  let bestName = -1;
+  let bestScore = -1;
+
+  for (let col = 0; col < maxColumns; col += 1) {
+    let score = 0;
+    for (const row of rows.slice(0, 250)) {
+      const value = row?.[col];
+      if (textLike(value)) score += 2;
+      const text = clean(value).toLocaleLowerCase("ru-RU");
+      if (text.includes("номенклатур") || text.includes("материал") || text.includes("наименован")) score += 30;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestName = col;
+    }
+  }
+
+  if (bestName < 0) throw new Error("Не удалось определить колонку с названием материала");
+
+  const numericScore = (col: number) => {
+    let score = 0;
+    for (const row of rows.slice(0, 300)) {
+      if (Number.isFinite(toNumber(row?.[col], Number.NaN))) score += 1;
+    }
+    return score;
+  };
+
+  const candidates = [bestName + 1, bestName + 2, bestName + 3, bestName + 4]
+    .filter((col) => col < maxColumns)
+    .map((col) => ({ col, score: numericScore(col) }))
+    .sort((a, b) => b.score - a.score);
+
+  const ordered = candidates.map((item) => item.col).sort((a, b) => a - b);
+  if (!ordered.length) throw new Error("Не удалось определить колонки количества");
+
+  return {
+    nameColumn: bestName,
+    quantityColumn: ordered[0] ?? bestName + 1,
+    reservedColumn: ordered[1] ?? bestName + 2,
+    availableColumn: ordered[2] ?? bestName + 3,
+  };
+}
+
+function parseWorkbook(buffer: ArrayBuffer): { items: ParsedItem[]; detection: Detection } {
   const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!firstSheet) throw new Error("В Excel нет листов");
@@ -69,18 +127,26 @@ function parseWorkbook(buffer: ArrayBuffer): ParsedItem[] {
     raw: true,
   });
 
+  const detection = detectColumns(rows);
   const result: ParsedItem[] = [];
   const seen = new Set<string>();
 
   rows.forEach((row, index) => {
-    const name = clean(row?.[1]);
-    if (!name) return;
-    const lower = name.toLocaleLowerCase("ru-RU");
-    if (lower.includes("номенклатур") || lower === "итого" || lower.startsWith("итого ")) return;
+    const name = clean(row?.[detection.nameColumn]);
+    if (!name || isNumericText(name)) return;
 
-    const quantity1c = toNumber(row?.[2], Number.NaN);
-    const reserved1c = toNumber(row?.[3], 0);
-    const availableRaw = toNumber(row?.[4], Number.NaN);
+    const lower = name.toLocaleLowerCase("ru-RU");
+    if (
+      lower.includes("номенклатур") ||
+      lower.includes("наименован") ||
+      lower === "итого" ||
+      lower.startsWith("итого ") ||
+      lower.includes("всего")
+    ) return;
+
+    const quantity1c = toNumber(row?.[detection.quantityColumn], Number.NaN);
+    const reserved1c = toNumber(row?.[detection.reservedColumn], 0);
+    const availableRaw = toNumber(row?.[detection.availableColumn], Number.NaN);
     const available1c = Number.isFinite(availableRaw)
       ? availableRaw
       : Number.isFinite(quantity1c)
@@ -101,10 +167,16 @@ function parseWorkbook(buffer: ArrayBuffer): ParsedItem[] {
     });
   });
 
-  if (!result.length) {
-    throw new Error("Не удалось найти материалы. Ожидаются названия в колонке B и количества в C–E.");
+  if (result.length < 5) {
+    throw new Error("Файл не похож на справочник материалов: найдено слишком мало корректных строк");
   }
-  return result;
+
+  const suspicious = result.filter((item) => isNumericText(item.name)).length;
+  if (suspicious > 0) {
+    throw new Error("Импорт остановлен: в колонке названий обнаружены числовые итоговые строки");
+  }
+
+  return { items: result, detection };
 }
 
 export async function POST(request: Request) {
@@ -124,7 +196,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Файл слишком большой. Максимум 15 МБ" }, { status: 413 });
     }
 
-    const items = parseWorkbook(await file.arrayBuffer());
+    const { items, detection } = parseWorkbook(await file.arrayBuffer());
     const db = await getDb();
     await ensureTables(db);
 
@@ -220,6 +292,7 @@ export async function POST(request: Request) {
       inserted,
       updated,
       preservedLinks,
+      detection,
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Не удалось импортировать Excel" }, { status: 500 });
