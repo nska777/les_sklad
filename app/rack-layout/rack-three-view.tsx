@@ -55,7 +55,9 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     const x0 = -width / 2;
 
     const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 120);
-    const cameraDistance = Math.max(11.2, height * 1.48);
+    // Стартовый ракурс специально чуть дальше: при первом открытии весь стеллаж
+    // сразу виден целиком, примерно как на рабочем обзорном скриншоте.
+    const cameraDistance = Math.max(12.8, height * 1.58, width * 0.78);
     const targetY = height * 0.46;
     camera.position.set(0, Math.max(4.6, height * 0.61), side === "front" ? cameraDistance : -cameraDistance);
 
@@ -236,7 +238,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
   useEffect(() => {
     const camera = stateRef.current.camera;
     const controls = stateRef.current.controls;
-    const cameraDistance = stateRef.current.cameraDistance || 12;
+    const cameraDistance = stateRef.current.cameraDistance || 13;
     const targetY = stateRef.current.targetY || rack.rows * 0.75;
     if (!camera || !controls) return;
     camera.position.set(0, Math.max(4.6, rack.rows * 1.03), side === "front" ? cameraDistance : -cameraDistance);
