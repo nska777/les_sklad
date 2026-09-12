@@ -77,3 +77,14 @@ export const activityLogs = pgTable("activity_logs", {
   entityId: text("entity_id").notNull(), entityName: text("entity_name").notNull(), details: text("details").notNull().default(""),
   operator: text("operator").notNull().default("Кладовщик"), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("idx_activity_logs_created_at").on(table.createdAt)]);
+
+export const warehouseUsers = pgTable("warehouse_users", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  name: text("name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  role: text("role").notNull().default("storekeeper"),
+  active: boolean("active").notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_warehouse_users_role_active").on(table.role, table.active)]);
