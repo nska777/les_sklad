@@ -28,8 +28,19 @@ export function CodeZoom() {
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
+      const target = event.target;
+
+      // Закрытие делаем прямо на capture-уровне, чтобы никакие SVG,
+      // Dialog/Radix-обёртки и вложенные обработчики не могли перехватить крестик.
+      if (target instanceof Element && target.closest("[data-code-zoom-close]")) {
+        event.preventDefault();
+        event.stopPropagation();
+        setPreview(null);
+        return;
+      }
+
       if (preview) return;
-      const svg = findLargeSquareSvg(event.target);
+      const svg = findLargeSquareSvg(target);
       if (!svg) return;
       event.preventDefault();
       event.stopPropagation();
@@ -37,6 +48,7 @@ export function CodeZoom() {
     };
 
     const onPointerOver = (event: PointerEvent) => {
+      if (preview) return;
       const svg = findLargeSquareSvg(event.target);
       if (svg) svg.style.cursor = "zoom-in";
     };
@@ -67,20 +79,31 @@ export function CodeZoom() {
 
   return (
     <div
-      className="no-print fixed inset-0 z-[130] flex cursor-zoom-out items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md animate-in fade-in duration-200"
-      onClick={() => setPreview(null)}
-      role="presentation"
+      className="no-print fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`QR-код ${preview.label}`}
     >
       <div className="relative w-full max-w-xl rounded-[30px] border border-white/40 bg-white p-6 shadow-2xl animate-in zoom-in-90 fade-in duration-200 sm:p-8">
         <button
           type="button"
-          onClick={() => setPreview(null)}
-          className="absolute right-3 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
-          aria-label="Закрыть"
+          data-code-zoom-close
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setPreview(null);
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setPreview(null);
+          }}
+          className="absolute right-3 top-3 z-[310] flex h-12 w-12 cursor-pointer items-center justify-center rounded-full bg-slate-100 text-slate-700 shadow-sm transition hover:bg-slate-200 active:scale-95"
+          aria-label="Закрыть QR-код"
         >
-          <X size={20} />
+          <X size={24} pointerEvents="none" />
         </button>
-        <div className="mb-5 pr-12">
+        <div className="mb-5 pr-14">
           <div className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">QR-код</div>
           <div className="mt-1 truncate font-mono text-sm font-bold text-slate-800">{preview.label}</div>
         </div>
@@ -90,7 +113,7 @@ export function CodeZoom() {
             dangerouslySetInnerHTML={{ __html: preview.markup }}
           />
         </div>
-        <div className="mt-4 text-center text-xs text-slate-400">Нажмите ещё раз в любом месте, чтобы закрыть</div>
+        <div className="mt-4 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
       </div>
     </div>
   );
