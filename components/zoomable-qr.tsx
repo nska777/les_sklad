@@ -38,30 +38,29 @@ export function ZoomableQr({ value, label, size = 116, className = "" }: Zoomabl
 
       {open && (
         <div
-          className="fixed inset-0 z-[120] flex cursor-zoom-out items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setOpen(false)}
-          role="presentation"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`QR-код ${label || value}`}
         >
-          <div
-            className="relative w-full max-w-xl cursor-default rounded-[28px] border border-white/40 bg-white p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <div className="relative w-full max-w-xl rounded-[28px] border border-white/40 bg-white p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8">
             <button
               type="button"
-              onClick={() => setOpen(false)}
-              className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => { event.stopPropagation(); setOpen(false); }}
+              className="absolute right-3 top-3 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600 shadow-sm transition hover:bg-slate-200 active:scale-95"
               aria-label="Закрыть"
             >
-              <X size={18} />
+              <X size={22} />
             </button>
-            <div className="mb-5 pr-10">
+            <div className="mb-5 pr-14">
               <div className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">QR-код ячейки</div>
               <div className="mt-1 font-mono text-lg font-bold text-slate-800">{label || value}</div>
             </div>
             <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
               <QRCodeSVG value={value} size={320} className="h-auto w-full max-w-[320px]" />
             </div>
-            <div className="mt-4 text-center text-xs text-slate-400">Нажмите вне окна или на крестик, чтобы закрыть</div>
+            <div className="mt-4 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
           </div>
         </div>
       )}
