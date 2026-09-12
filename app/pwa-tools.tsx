@@ -10,15 +10,29 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+let deferredInstallPrompt: InstallPromptEvent | null = null;
+let installPromptListenerReady = false;
+
+function rememberInstallPrompt(event: Event) {
+  event.preventDefault();
+  deferredInstallPrompt = event as InstallPromptEvent;
+  window.dispatchEvent(new CustomEvent("warehouse-install-ready"));
+}
+
 export function PwaRegister() {
   useEffect(() => {
     if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js");
+
+    if (!installPromptListenerReady) {
+      window.addEventListener("beforeinstallprompt", rememberInstallPrompt);
+      installPromptListenerReady = true;
+    }
   }, []);
   return null;
 }
 
 export function InstallGuide() {
-  const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
+  const [prompt, setPrompt] = useState<InstallPromptEvent | null>(deferredInstallPrompt);
   const [installed, setInstalled] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -31,22 +45,23 @@ export function InstallGuide() {
     const standalone = window.matchMedia("(display-mode: standalone)").matches
       || ("standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
     setInstalled(standalone);
+    setPrompt(deferredInstallPrompt);
 
-    const onPrompt = (event: Event) => {
-      event.preventDefault();
-      setPrompt(event as InstallPromptEvent);
+    const onReady = () => {
+      setPrompt(deferredInstallPrompt);
       setMessage("");
     };
     const onInstalled = () => {
+      deferredInstallPrompt = null;
       setInstalled(true);
       setPrompt(null);
       setMessage("Приложение установлено. Значок добавлен системой.");
     };
 
-    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("warehouse-install-ready", onReady);
     window.addEventListener("appinstalled", onInstalled);
     return () => {
-      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("warehouse-install-ready", onReady);
       window.removeEventListener("appinstalled", onInstalled);
     };
   }, []);
@@ -57,14 +72,16 @@ export function InstallGuide() {
       return;
     }
 
-    if (prompt) {
-      await prompt.prompt();
-      const choice = await prompt.userChoice;
+    const currentPrompt = prompt || deferredInstallPrompt;
+    if (currentPrompt) {
+      await currentPrompt.prompt();
+      const choice = await currentPrompt.userChoice;
       if (choice.outcome === "accepted") {
         setMessage("Установка подтверждена. Значок появится среди приложений устройства.");
       } else {
         setMessage("Установка отменена.");
       }
+      deferredInstallPrompt = null;
       setPrompt(null);
       return;
     }
@@ -75,18 +92,18 @@ export function InstallGuide() {
     }
 
     if (!window.isSecureContext) {
-      setMessage("Для установки приложения нужна защищённая ссылка HTTPS. На текущем HTTP-адресе браузер не разрешает автоматическую установку.");
+      setMessage("Для установки приложения нужна защищённая ссылка HTTPS.");
       return;
     }
 
-    setMessage("Браузер пока не предлагает установку. Обновите страницу и попробуйте ещё раз.");
+    setMessage("Chrome ещё не выдал разрешение на установку. Останьтесь на сайте около 30 секунд, нажмите любую кнопку и затем повторите установку.");
   };
 
   return <TabsContent value="install" className="space-y-5">
     <div>
       <p className="eyebrow">Приложение на любом устройстве</p>
       <h1 className="page-title">Установить «Русский Лес · Склад»</h1>
-      <p className="page-description">Нажмите одну кнопку. Если устройство поддерживает PWA-установку, браузер сам добавит приложение и его значок после вашего подтверждения.</p>
+      <p className="page-description">Нажмите одну кнопку. Если устройство поддерживает PWA-установку, браузер откроет системное окно подтверждения.</p>
     </div>
 
     <div className="install-hero panel">
@@ -110,7 +127,7 @@ export function InstallGuide() {
 
     <div className="panel flex items-start gap-3 p-5 text-sm leading-6 text-[var(--muted-foreground)]">
       <RefreshCw className="mt-0.5 shrink-0 text-[var(--primary)]" size={19} />
-      <p><b className="text-[var(--foreground)]">Важно:</b> настоящая PWA-установка на компьютере и Android требует HTTPS. После подключения HTTPS кнопка будет работать в один клик с системным подтверждением.</p>
+      <p><b className="text-[var(--foreground)]">Важно:</b> сайт уже работает по HTTPS. Chrome сам решает, когда выдать системное разрешение на установку; наша кнопка теперь сохраняет это разрешение даже если оно появилось до открытия вкладки «Установка».</p>
     </div>
   </TabsContent>;
 }
