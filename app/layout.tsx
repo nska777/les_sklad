@@ -6,6 +6,7 @@ import { SessionMenu } from "@/app/session-menu";
 import { CodeZoom } from "@/app/code-zoom";
 import { MovementDateMaintenance } from "@/app/movement-date-maintenance";
 import { OnecCellOccupancyGuard } from "@/app/onec-cell-occupancy-guard";
+import { AddStockExceptionHelper } from "@/app/add-stock-exception-helper";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -27,7 +28,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body className="antialiased"><PwaRegister /><MovementDateMaintenance /><OnecCellOccupancyGuard /><RackTabRouter />{children}<SessionMenu /><CodeZoom /><Toaster richColors position="top-right" /></body>
+      <body className="antialiased"><PwaRegister /><MovementDateMaintenance /><OnecCellOccupancyGuard /><AddStockExceptionHelper /><RackTabRouter />{children}<SessionMenu /><CodeZoom /><Toaster richColors position="top-right" /></body>
     </html>
   );
 }
