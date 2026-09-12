@@ -11,8 +11,12 @@ export const racks = pgTable("racks", {
 export const cells = pgTable("cells", {
   id: text("id").primaryKey(), rackId: text("rack_id").notNull().references(() => racks.id, { onDelete: "cascade" }),
   code: text("code").notNull().unique(), label: text("label").notNull(), rowIndex: integer("row_index").notNull(),
-  columnIndex: integer("column_index").notNull(), blocked: boolean("blocked").notNull().default(false),
-}, (table) => [index("idx_cells_rack_position").on(table.rackId, table.rowIndex, table.columnIndex)]);
+  columnIndex: integer("column_index").notNull(), side: text("side").notNull().default("front"),
+  blocked: boolean("blocked").notNull().default(false),
+}, (table) => [
+  index("idx_cells_rack_position").on(table.rackId, table.rowIndex, table.columnIndex),
+  index("idx_cells_rack_side_position").on(table.rackId, table.side, table.rowIndex, table.columnIndex),
+]);
 
 export const products = pgTable("products", {
   id: text("id").primaryKey(), name: text("name").notNull(), sku: text("sku").notNull().unique(),
