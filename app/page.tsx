@@ -8,6 +8,7 @@ import {
   ArrowRightLeft,
   ArrowUpFromLine,
   Boxes,
+  Camera,
   ClipboardList,
   Download,
   Grid3X3,
@@ -22,6 +23,7 @@ import {
   TreePine,
 } from "lucide-react";
 import { toast } from "sonner";
+import { CameraCodeScanner } from "@/components/camera-code-scanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,6 +53,7 @@ export default function Home() {
   const [data, setData] = useState<Snapshot>(emptyData);
   const [loading, setLoading] = useState(true);
   const [scan, setScan] = useState("");
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState("");
   const [selectedCell, setSelectedCell] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -116,9 +119,8 @@ export default function Home() {
     }
   };
 
-  const handleScan = (event: FormEvent) => {
-    event.preventDefault();
-    const value = scan.trim().toUpperCase();
+  const processScan = useCallback((rawValue: string) => {
+    const value = rawValue.trim().toUpperCase();
     if (!value) return;
     const product = data.products.find((item) => item.barcode.toUpperCase() === value || item.sku.toUpperCase() === value);
     const cell = data.cells.find((item) => item.code.toUpperCase() === value);
@@ -138,7 +140,12 @@ export default function Home() {
     }
 
     setScan("");
-    scanRef.current?.focus();
+    window.setTimeout(() => scanRef.current?.focus(), 80);
+  }, [data.products, data.cells]);
+
+  const handleScan = (event: FormEvent) => {
+    event.preventDefault();
+    processScan(scan);
   };
 
   const placeStock = async (payload?: { productId?: string; cellId?: string; quantity?: number; operator?: string }) => {
@@ -280,6 +287,7 @@ export default function Home() {
                     <QrCode className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
                     <Input ref={scanRef} id="scan" autoFocus value={scan} onChange={(event) => setScan(event.target.value)} placeholder="Отсканируйте этикетку товара или QR ячейки" className="h-14 border-0 bg-white/95 pl-12 text-base text-slate-900 placeholder:text-slate-400" />
                   </div>
+                  <Button type="button" variant="outline" onClick={() => setCameraOpen(true)} className="h-14 border-white/20 bg-white/10 px-5 text-white hover:bg-white/20 hover:text-white"><Camera /> Камера</Button>
                   <Button type="submit" className="accent-button h-14 px-5">Принять</Button>
                 </div>
               </form>
@@ -342,6 +350,8 @@ export default function Home() {
 
         <InstallGuide />
       </Tabs>
+
+      <CameraCodeScanner open={cameraOpen} onOpenChange={setCameraOpen} onScan={processScan} />
     </main>
   );
 }
