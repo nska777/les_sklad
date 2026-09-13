@@ -72,6 +72,44 @@ export const movements = pgTable("movements", {
   index("idx_movements_document_id").on(table.documentId),
 ]);
 
+export const issueLiveSessions = pgTable("issue_live_sessions", {
+  documentNumber: text("document_number").primaryKey(),
+  productCode: text("product_code").notNull().default(""),
+  productName: text("product_name").notNull().default(""),
+  cellCode: text("cell_code").notNull().default(""),
+  quantity: doublePrecision("quantity").notNull().default(0),
+  operator: text("operator").notNull().default("Кладовщик"),
+  stage: text("stage").notNull().default("document"),
+  progress: integer("progress").notNull().default(0),
+  status: text("status").notNull().default("active"),
+  message: text("message").notNull().default(""),
+  version: integer("version").notNull().default(1),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_issue_live_updated_at").on(table.updatedAt)]);
+
+export const issueHistory = pgTable("issue_history", {
+  id: text("id").primaryKey(),
+  movementId: text("movement_id").notNull().unique(),
+  documentId: text("document_id").notNull(),
+  documentNumber: text("document_number").notNull(),
+  recipient: text("recipient").notNull().default(""),
+  productId: text("product_id").notNull(),
+  productName: text("product_name").notNull(),
+  sku: text("sku").notNull().default(""),
+  barcode: text("barcode").notNull().default(""),
+  cellCode: text("cell_code").notNull().default(""),
+  quantity: doublePrecision("quantity").notNull(),
+  unit: text("unit").notNull().default("шт."),
+  operator: text("operator").notNull().default("Кладовщик"),
+  balanceAfter: doublePrecision("balance_after").notNull().default(0),
+  cellBalanceAfter: doublePrecision("cell_balance_after").notNull().default(0),
+  issuedAt: text("issued_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_issue_history_issued_at").on(table.issuedAt),
+  index("idx_issue_history_document").on(table.documentNumber),
+  index("idx_issue_history_product").on(table.productId),
+]);
+
 export const activityLogs = pgTable("activity_logs", {
   id: text("id").primaryKey(), action: text("action").notNull(), entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(), entityName: text("entity_name").notNull(), details: text("details").notNull().default(""),
