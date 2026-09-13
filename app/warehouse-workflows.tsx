@@ -17,8 +17,10 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
+import { MobileBarcodeScanner } from "@/components/mobile-barcode-scanner";
 import { ProductBarcode } from "@/components/product-barcode";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -89,6 +91,8 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
   const [cellScan, setCellScan] = useState("");
   const [issueCell, setIssueCell] = useState("");
   const [issueQuantity, setIssueQuantity] = useState("");
+  const [issueWizardOpen, setIssueWizardOpen] = useState(false);
+  const [issueProductVerified, setIssueProductVerified] = useState(false);
 
   const totals = useMemo(() => new Map(products.map((product) => [
     product.id,
@@ -114,6 +118,19 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
   const activeProduct = products.find((product) => product.id === activeLine?.productId);
   const locations = activeLine ? stocks.filter((stock) => stock.productId === activeLine.productId && stock.quantity > 0) : [];
   const remainingLine = activeLine ? Math.max(0, activeLine.plannedQuantity - activeLine.processedQuantity) : 0;
+  const selectedLocation = locations.find((stock) => stock.cellId === issueCell);
+  const issueQuantityValid = Number(issueQuantity) > 0
+    && Number(issueQuantity) <= remainingLine
+    && (!selectedLocation || Number(issueQuantity) <= selectedLocation.quantity);
+  const issueReady = Boolean(activeIssue && activeLine && issueProductVerified && issueCell && issueQuantityValid);
+  const issueProgress = !activeIssue ? 0 : !issueProductVerified ? 25 : !issueCell ? 50 : !issueQuantityValid ? 75 : 100;
+
+  const resetIssueVerification = () => {
+    setIssueProductVerified(false);
+    setIssueCell("");
+    setIssueQuantity("");
+    setCellScan("");
+  };
 
   const postWarehouse = async (payload: Record<string, unknown>) => {
     const response = await fetch("/api/warehouse", {
@@ -188,7 +205,12 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
       setIssueOneCId("");
       setIssueComment("");
       setIssueDraftLines([newDraftLine()]);
-      if (documentId) setSelectedIssue(documentId);
+      if (documentId) {
+        setSelectedIssue(documentId);
+        setSelectedLine("");
+        resetIssueVerification();
+        setIssueWizardOpen(true);
+      }
       toast.success("Документ выдачи создан", { description: `Позиций: ${rows.length}` });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось создать документ");
@@ -206,22 +228,21 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
     const firstPending = found.rows.find((row) => row.processedQuantity < row.plannedQuantity);
     setSelectedLine(firstPending?.lineId || found.rows[0]?.lineId || "");
     setDocumentScan("");
-    setIssueCell("");
-    setIssueQuantity("");
+    resetIssueVerification();
+    setIssueWizardOpen(true);
     toast.success(`Документ ${found.number} открыт`);
   };
 
   const chooseLine = (lineId: string) => {
     setSelectedLine(lineId);
-    setIssueCell("");
-    setIssueQuantity("");
-    setCellScan("");
+    resetIssueVerification();
+    setIssueWizardOpen(true);
   };
 
-  const scanCell = (event: FormEvent) => {
-    event.preventDefault();
+  const confirmCellCode = (rawValue: string) => {
     if (!activeLine) return toast.error("Сначала выберите позицию документа");
-    const value = cellScan.trim().toUpperCase();
+    if (!issueProductVerified) return toast.error("Сначала подтвердите штрихкод материала");
+    const value = rawValue.trim().toUpperCase();
     const cell = cells.find((item) => item.code.toUpperCase() === value);
     const location = cell && locations.find((item) => item.cellId === cell.id);
     if (!cell || cell.blocked || !location) return toast.error("В этой ячейке нет выбранного материала");
@@ -231,12 +252,34 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
     toast.success(`Ячейка ${cell.code} подтверждена`);
   };
 
+  const scanCell = (event: FormEvent) => {
+    event.preventDefault();
+    confirmCellCode(cellScan);
+  };
+
+  const confirmProductCode = (rawValue: string) => {
+    if (!activeProduct || !activeLine) return toast.error("Материал позиции не найден");
+    const value = rawValue.trim().toUpperCase();
+    const accepted = [activeProduct.barcode, activeProduct.sku, activeLine.productSku]
+      .filter(Boolean)
+      .map((code) => String(code).trim().toUpperCase());
+    if (!accepted.includes(value)) {
+      setIssueProductVerified(false);
+      return toast.error("Это другой материал", { description: `Нужно: ${activeLine.productName}` });
+    }
+    setIssueProductVerified(true);
+    setIssueCell("");
+    setIssueQuantity("");
+    toast.success("Материал подтверждён", { description: activeLine.productName });
+  };
+
   const issueSelectedLine = async () => {
-    if (!activeIssue || !activeLine || !issueCell || Number(issueQuantity) <= 0) {
-      return toast.error("Выберите позицию, ячейку и количество");
+    if (!activeIssue || !activeLine || !issueProductVerified || !issueCell || !issueQuantityValid) {
+      return toast.error("Пройдите все шаги выдачи: материал, ячейка и количество");
     }
     setSaving(true);
     try {
+      const issuedName = activeLine.productName;
       const result = await postIssue({
         action: "issueLine",
         documentId: activeIssue.id,
@@ -245,10 +288,12 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
         quantity: Number(issueQuantity),
         operator,
       });
-      setIssueCell("");
-      setIssueQuantity("");
+      resetIssueVerification();
       setSelectedLine("");
-      toast.success(result.completed ? `Документ ${activeIssue.number} полностью выдан` : `${activeLine.productName} выдан`);
+      if (result.completed) setIssueWizardOpen(false);
+      toast.success(result.completed ? `Документ ${activeIssue.number} полностью выдан` : `${issuedName} выдан`, {
+        description: result.completed ? "Все позиции документа закрыты" : "Переходим к следующей позиции",
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Ошибка выдачи");
     } finally { setSaving(false); }
@@ -357,7 +402,7 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
             </form>
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px]">
-              <div className="min-w-0"><Label>Документ</Label><NativeSelect value={activeIssue?.id || ""} onChange={(e) => { setSelectedIssue(e.target.value); setSelectedLine(""); setIssueCell(""); setIssueQuantity(""); }} className="mt-2 w-full">{issueGroups.map((document) => <NativeSelectOption key={document.id} value={document.id}>{document.number} · {document.recipient} · {document.rows.length} поз.</NativeSelectOption>)}</NativeSelect></div>
+              <div className="min-w-0"><Label>Документ</Label><NativeSelect value={activeIssue?.id || ""} onChange={(e) => { setSelectedIssue(e.target.value); setSelectedLine(""); resetIssueVerification(); setIssueWizardOpen(true); }} className="mt-2 w-full">{issueGroups.map((document) => <NativeSelectOption key={document.id} value={document.id}>{document.number} · {document.recipient} · {document.rows.length} поз.</NativeSelectOption>)}</NativeSelect></div>
               {activeIssue && <button type="button" data-code-zoom="qr" data-code-value={`ISSUE:${activeIssue.number}`} data-code-label={activeIssue.number} className="flex min-h-36 flex-col items-center justify-center rounded-2xl border border-black/10 bg-white p-3 text-center transition hover:border-blue-300 hover:shadow-sm"><QRCodeSVG value={`ISSUE:${activeIssue.number}`} size={92} /><b className="mt-2 font-mono text-xs">{activeIssue.number}</b><span className="mt-1 text-[11px] text-slate-500">Единый QR документа</span></button>}
             </div>
 
@@ -378,19 +423,74 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
                 })}
               </div>
 
-              {activeLine && remainingLine > 0 && <div className="rounded-2xl border border-black/10 bg-white p-4 sm:p-5">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-blue-600">Текущая позиция</p><h3 className="mt-1 text-lg font-bold">{activeLine.productName}</h3><p className="text-sm text-slate-500">Осталось выдать {qty(remainingLine)} {activeLine.productUnit}</p></div>{activeProduct && <div className="w-full max-w-[260px] overflow-hidden sm:w-[230px]"><ProductBarcode value={activeProduct.barcode || activeProduct.sku} name={activeProduct.name} compact className="w-full" /></div>}</div>
-
-                <form onSubmit={scanCell}><Label>QR ячейки хранения</Label><div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]"><Input value={cellScan} onChange={(e) => setCellScan(e.target.value)} placeholder="Например, CT-011A" className="h-11 font-mono" /><Button type="submit" variant="outline" className="h-11"><ScanLine /> Проверить</Button></div></form>
-
-                <div className="mt-4 grid gap-4 md:grid-cols-2"><div><Label>Подтверждённая ячейка</Label><NativeSelect value={issueCell} onChange={(e) => { const id = e.target.value; setIssueCell(id); const location = locations.find((item) => item.cellId === id); if (location) setIssueQuantity(String(Math.min(location.quantity, remainingLine))); }} className="mt-2 w-full"><NativeSelectOption value="">Отсканируйте или выберите</NativeSelectOption>{locations.map((stock) => <NativeSelectOption key={stock.cellId} value={stock.cellId}>{cells.find((cell) => cell.id === stock.cellId)?.code} · доступно {qty(stock.quantity)}</NativeSelectOption>)}</NativeSelect></div><div><Label>Фактически выдаётся</Label><Input className="mt-2" value={issueQuantity} onChange={(e) => setIssueQuantity(e.target.value)} type="number" min="0.001" max={remainingLine} step="any" /></div></div>
-                <div className="mt-4"><Label>Кладовщик</Label><Input className="mt-2" value={operator} onChange={(e) => setOperator(e.target.value)} /></div>
-                <Button disabled={saving || !issueCell || Number(issueQuantity) <= 0 || Number(issueQuantity) > remainingLine} onClick={() => void issueSelectedLine()} className="accent-button mt-5 h-12 w-full">{saving ? <Loader2 className="animate-spin" /> : <PackageCheck />} Подтвердить выдачу этой позиции</Button>
+              {activeLine && remainingLine > 0 && <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 sm:p-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="text-xs font-bold uppercase tracking-[.12em] text-blue-600">Следующая позиция</p><h3 className="mt-1 text-lg font-bold">{activeLine.productName}</h3><p className="mt-1 text-sm text-slate-600">Осталось выдать {qty(remainingLine)} {activeLine.productUnit}. Нажмите кнопку и пройдите проверку по шагам.</p></div>
+                  <Button type="button" className="accent-button h-12 shrink-0" onClick={() => { resetIssueVerification(); setIssueWizardOpen(true); }}><ScanLine /> Начать выдачу</Button>
+                </div>
               </div>}
             </>}
           </div>}
         </section>
       </div>
     </TabsContent>
+
+    <Dialog open={issueWizardOpen && !!activeIssue && !!activeLine && remainingLine > 0} onOpenChange={setIssueWizardOpen}>
+      <DialogContent className="max-h-[94vh] w-[calc(100vw-20px)] overflow-y-auto p-0 sm:max-w-2xl">
+        {activeIssue && activeLine && <>
+          <div className="border-b border-black/10 bg-slate-950 px-5 py-5 text-white sm:px-7">
+            <DialogHeader>
+              <DialogTitle className="text-xl text-white sm:text-2xl">Выдача материала</DialogTitle>
+              <DialogDescription className="text-slate-300">Документ {activeIssue.number} · {activeIssue.recipient}</DialogDescription>
+            </DialogHeader>
+            <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/15">
+              <div className="h-full rounded-full bg-emerald-400 transition-all duration-500 ease-out" style={{ width: `${issueProgress}%` }} />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-slate-300"><span>Проверка выдачи</span><b className="text-white">{issueProgress}%</b></div>
+          </div>
+
+          <div className="space-y-4 p-4 sm:p-6">
+            <div className="rounded-2xl border border-black/10 bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><p className="text-xs font-bold uppercase tracking-[.12em] text-slate-500">Текущая позиция</p><h3 className="mt-1 text-xl font-bold">{activeLine.productName}</h3><p className="mt-1 text-sm text-slate-500">Нужно выдать сейчас: {qty(remainingLine)} {activeLine.productUnit}</p></div>
+                {activeProduct && <div className="w-full max-w-[250px] overflow-hidden sm:w-[220px]"><ProductBarcode value={activeProduct.barcode || activeProduct.sku} name={activeProduct.name} compact className="w-full" /></div>}
+              </div>
+            </div>
+
+            <IssueStep number={1} title="Документ открыт" description={`${activeIssue.number} · ${activeIssue.recipient}`} done />
+
+            <IssueStep number={2} title="Отсканируйте штрихкод материала" description={issueProductVerified ? `Подтверждено: ${activeLine.productName}` : "Сканер проверит, что в руках именно нужный материал"} done={issueProductVerified} active={!issueProductVerified}>
+              {!issueProductVerified && <MobileBarcodeScanner label="Сканировать материал" onDetected={confirmProductCode} className="h-11 w-full sm:w-auto" />}
+            </IssueStep>
+
+            <IssueStep number={3} title="Отсканируйте QR ячейки" description={issueCell ? `Ячейка подтверждена: ${cells.find((cell) => cell.id === issueCell)?.code || ""}` : `Материал лежит: ${locations.map((stock) => cells.find((cell) => cell.id === stock.cellId)?.code).filter(Boolean).join(", ") || "адрес не найден"}`} done={!!issueCell} active={issueProductVerified && !issueCell} disabled={!issueProductVerified}>
+              {issueProductVerified && !issueCell && <>
+                <MobileBarcodeScanner label="Сканировать QR ячейки" onDetected={confirmCellCode} className="h-11 w-full sm:w-auto" />
+                <form onSubmit={scanCell} className="mt-2 flex gap-2"><Input value={cellScan} onChange={(e) => setCellScan(e.target.value)} placeholder="Или введите код ячейки" className="font-mono" /><Button type="submit" variant="outline">Проверить</Button></form>
+              </>}
+            </IssueStep>
+
+            <IssueStep number={4} title="Подтвердите количество" description={issueQuantityValid ? "Количество проверено" : "После подтверждения ячейки система подставит доступное количество"} done={issueQuantityValid} active={!!issueCell && !issueQuantityValid} disabled={!issueCell}>
+              {issueCell && <div className="grid gap-3 sm:grid-cols-2"><div><Label>Фактически выдаётся</Label><Input className="mt-2" value={issueQuantity} onChange={(e) => setIssueQuantity(e.target.value)} type="number" min="0.001" max={Math.min(remainingLine, selectedLocation?.quantity || remainingLine)} step="any" /></div><div><Label>Кладовщик</Label><Input className="mt-2" value={operator} onChange={(e) => setOperator(e.target.value)} /></div></div>}
+            </IssueStep>
+
+            <div className={`overflow-hidden rounded-2xl border p-4 transition-all duration-500 ${issueReady ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+              <div className="flex items-center gap-3"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all duration-300 ${issueReady ? "scale-110 bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"}`}><PackageCheck size={22} /></div><div><b className={issueReady ? "text-emerald-800" : "text-slate-600"}>{issueReady ? "Материал готов к выдаче" : "Завершите шаги выше"}</b>{issueReady && <p className="mt-0.5 text-sm text-emerald-700">{qty(Number(issueQuantity))} {activeLine.productUnit} · {cells.find((cell) => cell.id === issueCell)?.code}</p>}</div></div>
+            </div>
+
+            <Button disabled={saving || !issueReady} onClick={() => void issueSelectedLine()} className="accent-button h-13 w-full text-base">{saving ? <Loader2 className="animate-spin" /> : <PackageCheck />} {issueReady ? "Выдать материал" : "Ожидание проверок"}</Button>
+          </div>
+        </>}
+      </DialogContent>
+    </Dialog>
   </>;
+}
+
+function IssueStep({ number, title, description, done = false, active = false, disabled = false, children }: { number: number; title: string; description: string; done?: boolean; active?: boolean; disabled?: boolean; children?: React.ReactNode }) {
+  return <div className={`rounded-2xl border p-4 transition-all duration-300 ${done ? "border-emerald-200 bg-emerald-50/70" : active ? "border-blue-300 bg-blue-50/70 shadow-sm" : "border-slate-200 bg-white"} ${disabled ? "opacity-45" : ""}`}>
+    <div className="flex items-start gap-3">
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-all duration-300 ${done ? "bg-emerald-600 text-white" : active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{done ? <CheckCircle2 size={18} /> : number}</div>
+      <div className="min-w-0 flex-1"><div className="font-bold">{title}</div><p className="mt-1 text-sm leading-5 text-slate-500">{description}</p>{children && <div className="mt-3">{children}</div>}</div>
+    </div>
+  </div>;
 }
