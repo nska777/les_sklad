@@ -52,7 +52,7 @@ export function IssueMobileScanTools() {
     };
   }, []);
 
-  const label = useMemo(() => mode === "document" ? "Сканировать QR документа" : mode === "product" ? "Сканировать материал" : "Сканировать QR ячейки", [mode]);
+  const label = useMemo(() => mode === "document" ? "Сканировать QR документа" : mode === "product" ? "Сканировать штрихкод товара" : "Сканировать QR ячейки", [mode]);
 
   const handleDetected = (raw: string) => {
     const value = raw.trim();
@@ -88,15 +88,23 @@ export function IssueMobileScanTools() {
   if (!host) return null;
 
   return createPortal(
-    <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50/70 p-3 sm:p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-bold text-blue-900"><Camera size={18} /> Камера телефона / ТСД</div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <button type="button" onClick={() => setMode("document")} className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-900 shadow-sm active:scale-[.99]"><QrCode size={17} /> QR документа</button>
-        <button type="button" onClick={() => setMode("product")} className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-900 shadow-sm active:scale-[.99]"><PackageSearch size={17} /> Материал</button>
-        <button type="button" onClick={() => setMode("cell")} className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-900 shadow-sm active:scale-[.99]"><ScanLine size={17} /> Ячейка</button>
+    <div className="mt-4 rounded-2xl border-2 border-orange-200 bg-orange-50/80 p-3 shadow-sm sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900"><Camera size={19} className="text-orange-600" /> Сканер камерой телефона</div>
+          <p className="mt-1 text-xs leading-5 text-slate-600">На iPhone нажмите нужную кнопку — откроется задняя камера. Первый раз Safari попросит разрешение.</p>
+        </div>
+        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700">iPhone / Android</span>
       </div>
-      <p className="mt-2 text-xs leading-5 text-blue-900/70">На iPhone: документ → материал → ячейка → проверьте количество → подтвердите выдачу. Остаток спишется сразу в общей базе.</p>
-      {mode && <div className="hidden"><MobileBarcodeScanner label={label} onDetected={handleDetected} /></div>}
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <button type="button" onClick={() => setMode("document")} className="flex min-h-14 items-center justify-center gap-2 rounded-xl border border-orange-200 bg-white px-3 py-3 text-sm font-bold text-slate-900 shadow-sm transition hover:border-orange-400 hover:bg-orange-50 active:scale-[.99]"><QrCode size={18} className="text-orange-600" /> Сканировать документ</button>
+        <button type="button" onClick={() => setMode("product")} className="flex min-h-14 items-center justify-center gap-2 rounded-xl border border-orange-200 bg-white px-3 py-3 text-sm font-bold text-slate-900 shadow-sm transition hover:border-orange-400 hover:bg-orange-50 active:scale-[.99]"><PackageSearch size={18} className="text-orange-600" /> Сканировать товар</button>
+        <button type="button" onClick={() => setMode("cell")} className="flex min-h-14 items-center justify-center gap-2 rounded-xl border border-orange-200 bg-white px-3 py-3 text-sm font-bold text-slate-900 shadow-sm transition hover:border-orange-400 hover:bg-orange-50 active:scale-[.99]"><ScanLine size={18} className="text-orange-600" /> Сканировать ячейку</button>
+      </div>
+
+      <p className="mt-3 rounded-xl bg-white/80 px-3 py-2 text-xs leading-5 text-slate-600"><b>Тест:</b> документ → товар → ячейка → количество → «Подтвердить выдачу». После подтверждения остаток сразу меняется в общей базе.</p>
+
       {mode && <AutoOpenScanner label={label} onDetected={handleDetected} onClose={() => setMode(null)} />}
     </div>,
     host,
