@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Check, Pencil, Save, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
+type Side = "front" | "back";
 type Rack = { id: string; name: string; code: string; rows: number; columns: number };
-type Cell = { id: string; rackId: string; code: string; label: string; rowIndex: number; columnIndex: number; blocked: boolean; side: "front" | "back" };
+type Cell = { id: string; rackId: string; code: string; label: string; rowIndex: number; columnIndex: number; blocked: boolean; side: Side };
 type Stock = { productId: string; cellId: string; quantity: number; productName: string; sku: string; barcode: string; unit: string };
 type LayoutCell = {
   id: string;
@@ -15,7 +17,7 @@ type LayoutCell = {
   code: string;
   rowIndex: number;
   columnIndex: number;
-  side: "front" | "back";
+  side: Side;
   blocked: boolean;
   widthRatio: number;
   heightRatio: number;
@@ -23,7 +25,6 @@ type LayoutCell = {
   hasStock: boolean;
 };
 type VisualCell = Cell & { widthRatio: number; heightRatio: number; archived: boolean; hasStock: boolean };
-
 type EditorCell = {
   id: string;
   code: string;
@@ -34,7 +35,17 @@ type EditorCell = {
   hasStock: boolean;
 };
 
+type Props = {
+  rack: Rack;
+  cells: Cell[];
+  stocks: Stock[];
+  side: Side;
+  onCellClick: (cell: Cell) => void;
+  highlightCellId?: string | null;
+};
+
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const sideLabel = (side: Side) => side === "front" ? "Лицевая" : "Задняя";
 
 function labelSprite(text: string, accent = false, widthScale = 1, heightScale = 1) {
   const canvas = document.createElement("canvas");
@@ -51,23 +62,26 @@ function labelSprite(text: string, accent = false, widthScale = 1, heightScale =
   ctx.font = "700 32px system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const parts = text.split("\n");
-  parts.slice(0, 3).forEach((line, index) => ctx.fillText(line, 256, 48 + index * 38, 460));
+  text.split("\n").slice(0, 3).forEach((line, index) => ctx.fillText(line, 256, 48 + index * 38, 460));
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false, rotation: 0 });
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(2.3 * widthScale, 0.86 * heightScale, 1);
   return sprite;
 }
 
-export function RackThreeView({ rack, cells, stocks, side, onCellClick, highlightCellId }: { rack: Rack; cells: Cell[]; stocks: Stock[]; side: "front" | "back"; onCellClick: (cell: Cell) => void; highlightCellId?: string | null }) {
+export function RackThreeView({ rack, cells, stocks, side, onCellClick, highlightCellId }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef<{ camera?: THREE.PerspectiveCamera; controls?: OrbitControls; cameraDistance?: number; targetY?: number }>({});
+  const cameraSideRef = useRef<Side>(side);
+  const [cameraSide, setCameraSide] = useState<Side>(side);
   const [layoutCells, setLayoutCells] = useState<LayoutCell[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editorSide, setEditorSide] = useState<Side>(side);
   const [draft, setDraft] = useState<EditorCell[]>([]);
   const [editorSaving, setEditorSaving] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
 
   const loadVisualLayout = useCallback(async () => {
     try {
@@ -96,10 +110,9 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     })
     .filter((cell) => !cell.archived), [cells, layoutById]);
 
-  const sideVisualCells = useMemo(() => visualCells.filter((cell) => cell.side === side), [visualCells, side]);
-
-  const openEditor = () => {
-    setDraft(sideVisualCells.map((cell) => ({
+  const makeDraft = useCallback((targetSide: Side) => visualCells
+    .filter((cell) => cell.side === targetSide)
+    .map((cell) => ({
       id: cell.id,
       code: cell.code,
       rowIndex: cell.rowIndex,
@@ -107,8 +120,23 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       widthRatio: cell.widthRatio,
       heightRatio: cell.heightRatio,
       hasStock: cell.hasStock || stocks.some((stock) => stock.cellId === cell.id && stock.quantity > 0),
-    })));
+    })), [stocks, visualCells]);
+
+  const openEditor = () => {
+    const camera = stateRef.current.camera;
+    const targetSide: Side = camera ? (camera.position.z >= 0 ? "front" : "back") : side;
+    setEditorSide(targetSide);
+    setDraft(makeDraft(targetSide));
+    setEditorDirty(false);
     setEditorOpen(true);
+  };
+
+  const changeEditorSide = (targetSide: Side) => {
+    if (targetSide === editorSide) return;
+    if (editorDirty && !window.confirm("Есть несохранённые изменения. Переключить сторону без сохранения?")) return;
+    setEditorSide(targetSide);
+    setDraft(makeDraft(targetSide));
+    setEditorDirty(false);
   };
 
   const editorRows = useMemo(() => {
@@ -123,7 +151,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       .sort((a, b) => b.rowIndex - a.rowIndex);
   }, [draft]);
 
-  const beginWidthDrag = (event: React.PointerEvent<HTMLButtonElement>, rowIndex: number, leftId: string, rightId: string) => {
+  const beginWidthDrag = (event: ReactPointerEvent<HTMLButtonElement>, rowIndex: number, leftId: string, rightId: string) => {
     event.preventDefault();
     event.stopPropagation();
     const rowElement = document.querySelector<HTMLElement>(`[data-rack-editor-row="${rowIndex}"]`);
@@ -142,6 +170,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       const nextLeft = clamp(leftStart + delta, minRatio, leftStart + rightStart - minRatio);
       const nextRight = leftStart + rightStart - nextLeft;
       setDraft((current) => current.map((cell) => cell.id === leftId ? { ...cell, widthRatio: nextLeft } : cell.id === rightId ? { ...cell, widthRatio: nextRight } : cell));
+      setEditorDirty(true);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -151,7 +180,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     window.addEventListener("pointerup", up, { once: true });
   };
 
-  const beginHeightDrag = (event: React.PointerEvent<HTMLButtonElement>, upperRow: number, lowerRow: number) => {
+  const beginHeightDrag = (event: ReactPointerEvent<HTMLButtonElement>, upperRow: number, lowerRow: number) => {
     event.preventDefault();
     event.stopPropagation();
     const editor = document.querySelector<HTMLElement>("[data-rack-editor-grid]");
@@ -163,8 +192,8 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     const startY = event.clientY;
     const upperStart = upper.heightRatio;
     const lowerStart = lower.heightRatio;
-    const allRows = Array.from(new Set(draft.map((cell) => cell.rowIndex)));
-    const totalHeight = allRows.reduce((sum, row) => sum + (draft.find((cell) => cell.rowIndex === row)?.heightRatio || 1), 0) || 1;
+    const rows = Array.from(new Set(draft.map((cell) => cell.rowIndex)));
+    const totalHeight = rows.reduce((sum, row) => sum + (draft.find((cell) => cell.rowIndex === row)?.heightRatio || 1), 0) || 1;
     const minRatio = Math.max(0.25, totalHeight * 0.08);
 
     const move = (pointer: PointerEvent) => {
@@ -172,6 +201,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       const nextUpper = clamp(upperStart + delta, minRatio, upperStart + lowerStart - minRatio);
       const nextLower = upperStart + lowerStart - nextUpper;
       setDraft((current) => current.map((cell) => cell.rowIndex === upperRow ? { ...cell, heightRatio: nextUpper } : cell.rowIndex === lowerRow ? { ...cell, heightRatio: nextLower } : cell));
+      setEditorDirty(true);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -182,16 +212,10 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
   };
 
   const archiveCell = async (cell: EditorCell) => {
-    if (cell.hasStock) {
-      toast.error("В ячейке есть материал", { description: "Сначала переместите остаток в другую ячейку." });
-      return;
-    }
+    if (cell.hasStock) return toast.error("В ячейке есть материал", { description: "Сначала переместите остаток в другую ячейку." });
     const rowCells = draft.filter((item) => item.rowIndex === cell.rowIndex);
-    if (rowCells.length <= 1) {
-      toast.error("На полке должна остаться хотя бы одна ячейка");
-      return;
-    }
-    if (!window.confirm(`Удалить ячейку ${cell.code} из схемы стеллажа?`)) return;
+    if (rowCells.length <= 1) return toast.error("На полке должна остаться хотя бы одна ячейка");
+    if (!window.confirm(`Удалить ячейку ${cell.code} из ${sideLabel(editorSide).toLowerCase()} стороны?`)) return;
     try {
       const response = await fetch("/api/rack-layout/visual", {
         method: "POST",
@@ -218,7 +242,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
         body: JSON.stringify({
           action: "saveLayout",
           rackId: rack.id,
-          side,
+          side: editorSide,
           operator: "Визуальный редактор",
           cells: draft.map((cell) => ({ id: cell.id, rowIndex: cell.rowIndex, widthRatio: cell.widthRatio, heightRatio: cell.heightRatio })),
         }),
@@ -226,9 +250,10 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       const body = await response.json() as { cells?: LayoutCell[]; error?: string };
       if (!response.ok) throw new Error(body.error || "Не удалось сохранить схему");
       setLayoutCells(body.cells || []);
+      setEditorDirty(false);
       setEditorOpen(false);
       window.dispatchEvent(new CustomEvent("warehouse-data-refresh"));
-      toast.success("Схема стеллажа сохранена", { description: "Новые размеры сразу применены к 3D-модели." });
+      toast.success(`${sideLabel(editorSide)} сторона сохранена`, { description: "Размеры сразу применены к 3D-модели." });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось сохранить схему");
     } finally {
@@ -245,13 +270,13 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     scene.background = new THREE.Color(0xf8fafc);
     scene.fog = new THREE.Fog(0xf8fafc, 24, 46);
 
-    const targetWidth = Math.min(18, Math.max(14.5, rack.columns * 2.9));
+    const width = Math.min(18, Math.max(14.5, rack.columns * 2.9));
     const depth = 1.95;
-    const width = targetWidth;
     const x0 = -width / 2;
-
+    const preferredHeightSide = cameraSideRef.current;
     const rowHeightWeights = Array.from({ length: rack.rows }, (_, rowIndex) => {
-      const rowCell = visualCells.find((cell) => cell.rowIndex === rowIndex);
+      const rowCell = visualCells.find((cell) => cell.side === preferredHeightSide && cell.rowIndex === rowIndex)
+        || visualCells.find((cell) => cell.rowIndex === rowIndex);
       return Math.max(0.25, Number(rowCell?.heightRatio || 1));
     });
     const rowWeightTotal = rowHeightWeights.reduce((sum, value) => sum + value, 0) || rack.rows || 1;
@@ -310,7 +335,6 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
     scene.add(rackGroup);
     const steel = new THREE.MeshStandardMaterial({ color: 0x273449, roughness: 0.42, metalness: 0.74 });
     const shelfMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.52, metalness: 0.55 });
-
     const addBox = (w: number, h: number, d: number, x: number, y: number, z: number, material: THREE.Material, cast = true) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
       mesh.position.set(x, y, z);
@@ -322,16 +346,12 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
 
     addBox(width + 0.7, 0.24, depth + 0.35, 0, 0.05, 0, steel);
     addBox(width + 0.7, 0.22, depth + 0.35, 0, height + 0.1, 0, steel);
-
-    // Несущие стойки остаются по внешним краям, а внутренние перегородки
-    // строятся отдельно для каждой полки по реальной ширине ячеек.
     for (const x of [x0, x0 + width]) {
       addBox(0.18, height, 0.18, x, height / 2, -depth / 2, steel);
       addBox(0.18, height, 0.18, x, height / 2, depth / 2, steel);
     }
     for (let row = 0; row < rack.rows; row += 1) {
-      const y = rowBottoms[row] + rowHeights[row];
-      addBox(width + 0.22, 0.12, depth, 0, y, 0, shelfMat);
+      addBox(width + 0.22, 0.12, depth, 0, rowBottoms[row] + rowHeights[row], 0, shelfMat);
     }
 
     const interactive: THREE.Object3D[] = [];
@@ -340,9 +360,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
 
     for (const cellSide of ["front", "back"] as const) {
       for (let rowIndex = 0; rowIndex < rack.rows; rowIndex += 1) {
-        const rowCells = visualCells
-          .filter((cell) => cell.side === cellSide && cell.rowIndex === rowIndex)
-          .sort((a, b) => a.columnIndex - b.columnIndex);
+        const rowCells = visualCells.filter((cell) => cell.side === cellSide && cell.rowIndex === rowIndex).sort((a, b) => a.columnIndex - b.columnIndex);
         if (!rowCells.length) continue;
         const totalRatio = rowCells.reduce((sum, cell) => sum + Math.max(0.12, cell.widthRatio), 0) || rowCells.length;
         let xCursor = x0;
@@ -382,16 +400,18 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
 
           const total = cellStocks.reduce((sum, stock) => sum + stock.quantity, 0);
           const first = cellStocks[0];
-          const labelWidthScale = clamp(cellWidth / 2.4, 0.58, 2.15);
-          const labelHeightScale = clamp(cellHeight / 1.55, 0.72, 1.35);
-          const label = labelSprite(occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`, highlighted || occupied, labelWidthScale, labelHeightScale);
+          const label = labelSprite(
+            occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`,
+            highlighted || occupied,
+            clamp(cellWidth / 2.4, 0.58, 2.15),
+            clamp(cellHeight / 1.55, 0.72, 1.35),
+          );
           label.position.set(x, y, cell.side === "front" ? depth / 2 + 0.25 : -depth / 2 - 0.25);
           rackGroup.add(label);
 
           xCursor += cellWidth;
           if (index < rowCells.length - 1) {
-            const separatorX = xCursor;
-            addBox(0.11, Math.max(0.34, cellHeight - 0.06), 0.11, separatorX, rowBottoms[rowIndex] + cellHeight / 2, cell.side === "front" ? depth / 2 : -depth / 2, steel, false);
+            addBox(0.11, Math.max(0.34, cellHeight - 0.06), 0.11, xCursor, rowBottoms[rowIndex] + cellHeight / 2, cell.side === "front" ? depth / 2 : -depth / 2, steel, false);
           }
         });
       }
@@ -441,6 +461,11 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
         highlightedMaterial.emissiveIntensity = 0.45 + pulse * 0.75;
       }
       controls.update();
+      const detectedSide: Side = camera.position.z >= 0 ? "front" : "back";
+      if (detectedSide !== cameraSideRef.current) {
+        cameraSideRef.current = detectedSide;
+        setCameraSide(detectedSide);
+      }
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     };
@@ -455,7 +480,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
           object.geometry.dispose();
-          if (Array.isArray(object.material)) object.material.forEach((m) => m.dispose());
+          if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
           else object.material.dispose();
         }
         if (object instanceof THREE.Sprite) { object.material.map?.dispose(); object.material.dispose(); }
@@ -463,13 +488,15 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
       renderer.dispose();
       host.innerHTML = "";
     };
-  }, [rack, visualCells, stocks, side, onCellClick, highlightCellId]);
+  }, [highlightCellId, onCellClick, rack, side, stocks, visualCells]);
 
   useEffect(() => {
     const camera = stateRef.current.camera;
     const controls = stateRef.current.controls;
     const cameraDistance = stateRef.current.cameraDistance || 16.2;
     const targetY = stateRef.current.targetY || rack.rows * 0.75;
+    cameraSideRef.current = side;
+    setCameraSide(side);
     if (!camera || !controls) return;
     camera.position.set(0, Math.max(4.8, rack.rows * 1.03), side === "front" ? cameraDistance : -cameraDistance);
     controls.target.set(0, targetY, 0);
@@ -477,26 +504,34 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
   }, [side, rack.rows]);
 
   const editorHeightTotal = editorRows.reduce((sum, row) => sum + (row.cells[0]?.heightRatio || 1), 0) || 1;
+  const hasBackCells = visualCells.some((cell) => cell.side === "back");
 
   return <>
     <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-inner">
       <div ref={hostRef} className="h-[74vh] min-h-[640px] w-full" />
-      <button type="button" onClick={openEditor} className="absolute right-4 top-4 z-20 inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white/95 px-4 py-2.5 text-sm font-bold text-blue-700 shadow-lg backdrop-blur transition hover:bg-blue-50">
-        <Pencil size={16} /> Редактировать схему
-      </button>
+      <div className="absolute right-4 top-4 z-20 flex flex-col items-end gap-2">
+        <div className="rounded-full border border-black/10 bg-white/90 px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm backdrop-blur">Сейчас видна: {sideLabel(cameraSide)}</div>
+        <button type="button" onClick={openEditor} className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-white/95 px-4 py-2.5 text-sm font-bold text-blue-700 shadow-lg backdrop-blur transition hover:bg-blue-50">
+          <Pencil size={16} /> Редактировать {cameraSide === "front" ? "лицевую" : "заднюю"} сторону
+        </button>
+      </div>
       {highlightCellId && <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-amber-300 bg-amber-50/95 px-4 py-2 text-xs font-bold text-amber-900 shadow-sm backdrop-blur">Найденная ячейка подсвечена</div>}
-      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">ЛКМ + перетаскивание — вращение · колесо — масштаб · клик по ячейке — открыть</div>
+      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-black/10 bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm backdrop-blur">ЛКМ + перетаскивание — вращение · колесо — масштаб · редактор определяет видимую сторону автоматически</div>
     </div>
 
-    {editorOpen && <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-sm" onPointerDown={(event) => { if (event.target === event.currentTarget) setEditorOpen(false); }}>
+    {editorOpen && <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-sm" onPointerDown={(event) => { if (event.target === event.currentTarget && !editorSaving) setEditorOpen(false); }}>
       <div className="flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-white/30 bg-white shadow-2xl">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b p-4 sm:p-6">
           <div>
             <div className="text-xs font-bold uppercase tracking-[.16em] text-blue-600">Визуальный конструктор</div>
             <h3 className="mt-1 text-2xl font-black text-slate-950">{rack.code} · {rack.name}</h3>
-            <p className="mt-1 text-sm text-slate-500">{side === "front" ? "Лицевая" : "Задняя"} сторона. Тяните границы ячеек мышкой. Горизонтальные границы меняют высоту полок.</p>
+            <p className="mt-1 text-sm text-slate-500">Редактируется: <b>{sideLabel(editorSide)} сторона</b>. Лицевая и задняя схемы независимы по ширине ячеек.</p>
+            <div className="mt-3 inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
+              <button type="button" disabled={editorSaving} onClick={() => changeEditorSide("front")} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${editorSide === "front" ? "bg-white text-blue-700 shadow" : "text-slate-500 hover:text-slate-800"}`}>Лицевая</button>
+              <button type="button" disabled={editorSaving || !hasBackCells} onClick={() => changeEditorSide("back")} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${editorSide === "back" ? "bg-white text-blue-700 shadow" : "text-slate-500 hover:text-slate-800"} disabled:opacity-35`}>Задняя</button>
+            </div>
           </div>
-          <button type="button" onClick={() => setEditorOpen(false)} className="rounded-full bg-slate-100 p-3 text-slate-600 hover:bg-slate-200"><X size={20} /></button>
+          <button type="button" disabled={editorSaving} onClick={() => setEditorOpen(false)} className="rounded-full bg-slate-100 p-3 text-slate-600 hover:bg-slate-200 disabled:opacity-40"><X size={20} /></button>
         </div>
 
         <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-4 sm:p-6 lg:grid-cols-[1fr_280px]">
@@ -529,14 +564,14 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
 
           <aside className="space-y-4">
             <div className="rounded-2xl bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-              <b>Как редактировать</b><br />
+              <b>{sideLabel(editorSide)} сторона</b><br />
               Синяя вертикальная грань — ширина соседних ячеек.<br />
               Оранжевая горизонтальная грань — высота уровня.<br />
               Корзина удаляет только пустую ячейку.
             </div>
             <div className="rounded-2xl border p-4 text-sm text-slate-600">
-              <div className="font-bold text-slate-900">Текущая сторона</div>
-              <div className="mt-1">{side === "front" ? "Лицевая" : "Задняя"}</div>
+              <div className="font-bold text-slate-900">Редактируется</div>
+              <div className="mt-1">{sideLabel(editorSide)}</div>
               <div className="mt-3 font-bold text-slate-900">Полок</div>
               <div>{editorRows.length}</div>
               <div className="mt-3 font-bold text-slate-900">Активных ячеек</div>
@@ -544,7 +579,7 @@ export function RackThreeView({ rack, cells, stocks, side, onCellClick, highligh
               <div className="mt-3 font-bold text-slate-900">Сумма высот</div>
               <div>{editorHeightTotal.toFixed(2)}</div>
             </div>
-            <button type="button" disabled={editorSaving} onClick={() => void saveEditor()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 font-bold text-white shadow-lg transition hover:bg-blue-700 disabled:opacity-50"><Save size={18} /> {editorSaving ? "Сохраняю…" : "Сохранить схему"}</button>
+            <button type="button" disabled={editorSaving} onClick={() => void saveEditor()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 font-bold text-white shadow-lg transition hover:bg-blue-700 disabled:opacity-50"><Save size={18} /> {editorSaving ? "Сохраняю…" : `Сохранить · ${sideLabel(editorSide)}`}</button>
             <button type="button" disabled={editorSaving} onClick={() => setEditorOpen(false)} className="w-full rounded-xl border px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50">Отмена</button>
           </aside>
         </div>
