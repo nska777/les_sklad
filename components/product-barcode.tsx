@@ -41,7 +41,10 @@ function escapeHtml(value: string) {
 
 function openBarcodePrintPreview(value: string, name: string, svgMarkup: string) {
   const printWindow = window.open("", "_blank", "width=1000,height=850");
-  if (!printWindow) return;
+  if (!printWindow) {
+    window.alert("Браузер заблокировал окно предпросмотра. Разрешите всплывающие окна для сайта и попробуйте ещё раз.");
+    return;
+  }
 
   printWindow.document.open();
   printWindow.document.write(`<!doctype html>
@@ -103,11 +106,17 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
 
   useEffect(() => {
     if (!open) return;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = oldOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   if (!safeValue) return null;
@@ -157,9 +166,42 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
       </div>
 
       {mounted && open && createPortal(
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-label={`Штрихкод ${safeValue}`}>
-          <div className="relative w-full max-w-3xl rounded-[28px] border border-white/40 bg-white p-5 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8" onClick={(event) => event.stopPropagation()}>
-            <button type="button" onClick={() => setOpen(false)} className="absolute right-3 top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600 shadow-sm transition hover:bg-slate-200 active:scale-95" aria-label="Закрыть"><X size={22} /></button>
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+          style={{ pointerEvents: "auto" }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Штрихкод ${safeValue}`}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            if (event.target === event.currentTarget) setOpen(false);
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div
+            className="relative w-full max-w-3xl rounded-[28px] border border-white/40 bg-white p-5 shadow-2xl animate-in zoom-in-95 fade-in duration-200 sm:p-8"
+            style={{ pointerEvents: "auto" }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setOpen(false);
+              }}
+              className="absolute right-3 top-3 z-[320] flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-slate-100 text-slate-600 shadow-sm transition hover:bg-slate-200 active:scale-95"
+              style={{ pointerEvents: "auto" }}
+              aria-label="Закрыть"
+            >
+              <X size={22} pointerEvents="none" />
+            </button>
             <div className="mb-5 pr-14">
               <div className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">Штрихкод материала</div>
               {shownName && <div className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">{shownName}</div>}
@@ -170,9 +212,21 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
               <Barcode value={safeValue} format="CODE128" width={2.7} height={150} margin={0} fontSize={22} displayValue background="transparent" />
             </div>
             <div className="mt-5 flex justify-center">
-              <button type="button" onClick={printPreview} className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"><Printer size={18} /> Предпросмотр и печать</button>
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  printPreview();
+                }}
+                className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
+                style={{ pointerEvents: "auto" }}
+              >
+                <Printer size={18} pointerEvents="none" /> Предпросмотр и печать
+              </button>
             </div>
-            <div className="mt-3 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
+            <div className="mt-3 text-center text-xs text-slate-400">Закрыть — крестик справа сверху, клик по фону или Esc</div>
           </div>
         </div>,
         document.body,
