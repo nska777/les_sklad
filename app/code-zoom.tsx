@@ -17,8 +17,20 @@ function findLargeSquareSvg(target: EventTarget | null) {
 }
 
 function nearbyLabel(svg: SVGSVGElement) {
-  const direct = svg.parentElement?.parentElement?.querySelector<HTMLElement>("[data-code-label]")?.dataset.codeLabel;
-  if (direct) return direct.trim();
+  // 1) Явная подпись, если она задана рядом с QR.
+  const explicit = svg.closest<HTMLElement>("[data-code-label]")?.dataset.codeLabel
+    || svg.parentElement?.parentElement?.querySelector<HTMLElement>("[data-code-label]")?.dataset.codeLabel;
+  if (explicit?.trim()) return explicit.trim();
+
+  // 2) Этикетки склада: берём именно крупный код ячейки из карточки,
+  // а не общий текст контейнера. Так ST1-B-4A не превращается в «QR-код».
+  const cellCard = svg.closest<HTMLElement>(".cell-label");
+  const cellCode = cellCard?.querySelector<HTMLElement>(".cell-code")?.textContent?.trim();
+  if (cellCode) return cellCode;
+
+  // 3) Карточка ячейки в других разделах.
+  const nearbyCode = svg.parentElement?.parentElement?.querySelector<HTMLElement>(".font-mono")?.textContent?.trim();
+  if (nearbyCode) return nearbyCode;
 
   const container = svg.parentElement;
   if (!container) return "QR-код";
