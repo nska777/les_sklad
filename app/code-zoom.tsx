@@ -61,8 +61,8 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
   .qr svg { width: 29mm !important; height: 29mm !important; display: block; }
   .meta { min-width: 0; flex: 1; display: flex; flex-direction: column; justify-content: center; }
   .kind { font-size: 7.5pt; letter-spacing: .16em; text-transform: uppercase; color: #64748b; font-weight: 800; }
-  .code { margin-top: 2.2mm; font: 800 22pt/1.05 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .brand { margin-top: 2mm; font-size: 7.5pt; color: #64748b; font-weight: 700; letter-spacing: .04em; }
+  .code { margin-top: 1.8mm; font: 900 30pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand { margin-top: 1.8mm; font-size: 7.5pt; color: #64748b; font-weight: 700; letter-spacing: .04em; }
   @media print {
     .toolbar { display: none !important; }
     .sheet { min-height: auto; justify-content: flex-start; align-items: flex-start; }
@@ -189,7 +189,7 @@ export function CodeZoom() {
           />
           <div className="min-w-0 flex-1 text-center sm:text-left">
             <div className="text-xs font-bold uppercase tracking-[.18em] text-slate-400">Ячейка</div>
-            <div className="mt-3 break-words font-mono text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">{preview.label}</div>
+            <div className="mt-2 break-words font-mono text-5xl font-black tracking-[-0.045em] text-slate-950 sm:text-6xl">{preview.label}</div>
             <div className="mt-4 text-xs font-semibold tracking-wide text-slate-400">РУССКИЙ ЛЕС · СКЛАД</div>
           </div>
         </div>
