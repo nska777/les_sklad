@@ -17,6 +17,9 @@ function findLargeSquareSvg(target: EventTarget | null) {
 }
 
 function nearbyLabel(svg: SVGSVGElement) {
+  const direct = svg.parentElement?.parentElement?.querySelector<HTMLElement>("[data-code-label]")?.dataset.codeLabel;
+  if (direct) return direct.trim();
+
   const container = svg.parentElement;
   if (!container) return "QR-код";
   const text = container.textContent?.trim().replace(/\s+/g, " ") || "";
@@ -24,9 +27,9 @@ function nearbyLabel(svg: SVGSVGElement) {
 }
 
 function openQrPrintPreview(preview: NonNullable<Preview>) {
-  const printWindow = window.open("", "_blank", "width=900,height=900");
+  const printWindow = window.open("", "_blank", "width=1000,height=760");
   if (!printWindow) {
-    window.alert("Браузер заблокировал окно предпросмотра. Разрешите всплывающие окна для localhost и попробуйте ещё раз.");
+    window.alert("Браузер заблокировал окно предпросмотра. Разрешите всплывающие окна для сайта и попробуйте ещё раз.");
     return;
   }
 
@@ -45,23 +48,24 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
 <meta charset="utf-8" />
 <title>QR-код ${safeLabel}</title>
 <style>
-  @page { size: A4 portrait; margin: 14mm; }
+  @page { size: A4 portrait; margin: 10mm; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #111827; background: #fff; }
   .toolbar { position: sticky; top: 0; display: flex; justify-content: center; gap: 10px; padding: 14px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
   .toolbar button { border: 0; border-radius: 12px; padding: 11px 18px; font-size: 15px; font-weight: 700; cursor: pointer; }
   .print { background: #ff6b2c; color: white; }
   .close { background: #e5e7eb; color: #111827; }
-  .sheet { width: 100%; min-height: calc(297mm - 28mm); display: flex; align-items: center; justify-content: center; }
-  .label { width: 150mm; max-width: 100%; text-align: center; padding: 12mm; border: 1px solid #dbe3ee; border-radius: 6mm; }
-  .kind { font-size: 13pt; letter-spacing: .18em; text-transform: uppercase; color: #64748b; font-weight: 700; }
-  .code { margin-top: 4mm; font: 700 18pt ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .qr { margin: 10mm auto 0; width: 105mm; height: 105mm; max-width: 100%; }
-  .qr svg { width: 100% !important; height: 100% !important; display: block; }
+  .sheet { width: 100%; min-height: calc(297mm - 20mm); display: flex; align-items: center; justify-content: center; }
+  .label { width: 90mm; height: 36mm; display: flex; align-items: center; gap: 6mm; padding: 3mm 5mm; border: .4mm solid #111827; border-radius: 2.5mm; background: #fff; overflow: hidden; }
+  .qr { width: 29mm; height: 29mm; flex: 0 0 29mm; display: flex; align-items: center; justify-content: center; }
+  .qr svg { width: 29mm !important; height: 29mm !important; display: block; }
+  .meta { min-width: 0; flex: 1; display: flex; flex-direction: column; justify-content: center; }
+  .kind { font-size: 7.5pt; letter-spacing: .16em; text-transform: uppercase; color: #64748b; font-weight: 800; }
+  .code { margin-top: 2.2mm; font: 800 22pt/1.05 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand { margin-top: 2mm; font-size: 7.5pt; color: #64748b; font-weight: 700; letter-spacing: .04em; }
   @media print {
     .toolbar { display: none !important; }
-    .sheet { min-height: auto; }
-    .label { border: 0; }
+    .sheet { min-height: auto; justify-content: flex-start; align-items: flex-start; }
   }
 </style>
 </head>
@@ -72,9 +76,12 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
   </div>
   <main class="sheet">
     <section class="label">
-      <div class="kind">QR-код ячейки</div>
-      <div class="code">${safeLabel}</div>
       <div class="qr">${preview.markup}</div>
+      <div class="meta">
+        <div class="kind">QR-код ячейки</div>
+        <div class="code">${safeLabel}</div>
+        <div class="brand">РУССКИЙ ЛЕС · СКЛАД</div>
+      </div>
     </section>
   </main>
 </body>
@@ -122,10 +129,6 @@ export function CodeZoom() {
   useEffect(() => {
     if (!preview) return;
 
-    // Не трогаем body.pointerEvents. Radix Dialog сам управляет им и сам
-    // корректно возвращает клики после закрытия модалки. Раньше мы временно
-    // меняли это значение вручную, из-за чего после закрытия диалога страница
-    // могла оставаться с pointer-events: none до перезагрузки.
     const oldOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -153,7 +156,7 @@ export function CodeZoom() {
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
     >
-      <div className="relative w-full max-w-xl rounded-[30px] border border-white/40 bg-white p-6 shadow-2xl animate-in zoom-in-90 fade-in duration-200 sm:p-8" style={{ pointerEvents: "auto" }}>
+      <div className="relative w-full max-w-3xl rounded-[30px] border border-white/40 bg-white p-6 shadow-2xl animate-in zoom-in-90 fade-in duration-200 sm:p-8" style={{ pointerEvents: "auto" }}>
         <button
           type="button"
           data-code-zoom-close
@@ -173,16 +176,24 @@ export function CodeZoom() {
         >
           <X size={24} pointerEvents="none" />
         </button>
+
         <div className="mb-5 pr-14">
-          <div className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">QR-код</div>
-          <div className="mt-1 truncate font-mono text-sm font-bold text-slate-800">{preview.label}</div>
+          <div className="text-xs font-semibold uppercase tracking-[.16em] text-slate-400">QR-код ячейки</div>
+          <div className="mt-1 text-sm text-slate-500">Горизонтальная складская этикетка</div>
         </div>
-        <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-6 sm:p-8">
+
+        <div className="flex flex-col items-center gap-6 rounded-2xl border border-slate-200 bg-white p-5 sm:flex-row sm:p-8">
           <div
-            className="w-full max-w-[360px] [&_svg]:h-auto [&_svg]:w-full"
+            className="w-full max-w-[280px] shrink-0 [&_svg]:h-auto [&_svg]:w-full"
             dangerouslySetInnerHTML={{ __html: preview.markup }}
           />
+          <div className="min-w-0 flex-1 text-center sm:text-left">
+            <div className="text-xs font-bold uppercase tracking-[.18em] text-slate-400">Ячейка</div>
+            <div className="mt-3 break-words font-mono text-4xl font-black tracking-tight text-slate-900 sm:text-5xl">{preview.label}</div>
+            <div className="mt-4 text-xs font-semibold tracking-wide text-slate-400">РУССКИЙ ЛЕС · СКЛАД</div>
+          </div>
         </div>
+
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <button
             type="button"
