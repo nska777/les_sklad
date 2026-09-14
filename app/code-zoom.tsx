@@ -122,9 +122,6 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     font-weight: 800;
     letter-spacing: .04em;
   }
-  @media screen {
-    body { display: flex; align-items: flex-start; justify-content: flex-start; }
-  }
 </style>
 </head>
 <body>
@@ -137,11 +134,14 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     </div>
   </section>
 <script>
+  window.addEventListener('afterprint', function () {
+    window.close();
+  });
   window.addEventListener('load', function () {
     window.setTimeout(function () {
       window.focus();
       window.print();
-    }, 120);
+    }, 160);
   });
 </script>
 </body>
@@ -260,7 +260,9 @@ export function CodeZoom() {
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              openQrPrintPreview(preview);
+              const currentPreview = preview;
+              setPreview(null);
+              window.setTimeout(() => openQrPrintPreview(currentPreview), 80);
             }}
             className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
             style={{ pointerEvents: "auto" }}
@@ -268,7 +270,7 @@ export function CodeZoom() {
             <Printer size={18} pointerEvents="none" /> Печать этикетки
           </button>
         </div>
-        <div className="mt-3 text-center text-xs text-slate-400">Откроется чистое окно печати только с этикеткой</div>
+        <div className="mt-3 text-center text-xs text-slate-400">После печати окно закроется автоматически</div>
       </div>
     </div>
   );
