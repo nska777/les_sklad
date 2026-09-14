@@ -18,9 +18,10 @@ export function RackTabRouter() {
       const label = (tab.textContent || "").trim().toLowerCase();
       const route = routes[label];
       if (!route) return;
+
       event.preventDefault();
       event.stopPropagation();
-      window.location.assign(route);
+      window.open(route, "_blank", "noopener,noreferrer");
     };
 
     document.addEventListener("click", onClick, true);
