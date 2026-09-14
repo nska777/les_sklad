@@ -132,7 +132,7 @@ export default function LabelsPage() {
         .cell-qr svg { width: var(--qr-size) !important; height: var(--qr-size) !important; display: block !important; }
         .cell-meta { min-width: 0 !important; flex: 1 !important; }
         .cell-kind { display: block !important; font-size: 6.5pt !important; line-height: 1 !important; letter-spacing: .12em !important; color: #64748b !important; font-weight: 800 !important; text-transform: uppercase !important; }
-        .cell-code { margin-top: 2mm !important; font-size: 17pt !important; line-height: 1 !important; font-weight: 900 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+        .cell-code { margin-top: 1.6mm !important; font-size: 24pt !important; line-height: .95 !important; font-weight: 950 !important; letter-spacing: -.04em !important; color: #020617 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
         .product-barcode svg { width: 100% !important; max-height: var(--barcode-height) !important; height: var(--barcode-height) !important; }
         .label-secondary { display: none !important; }
         .label-code { margin-top: 1.5mm !important; font-size: 10pt !important; line-height: 1 !important; }
@@ -211,7 +211,7 @@ export default function LabelsPage() {
           <div className="cell-qr shrink-0"><QRCodeSVG value={cell.code} size={mmToPx(qrMm)} level="M" /></div>
           <div className="cell-meta min-w-0 flex-1">
             <div className="cell-kind text-[10px] font-bold uppercase tracking-[.16em] text-slate-400">QR-код ячейки</div>
-            <div className="cell-code mt-2 truncate font-mono text-2xl font-black tracking-tight text-slate-900">{cell.code}</div>
+            <div className="cell-code mt-1.5 truncate font-mono text-4xl font-black tracking-[-0.045em] text-slate-950">{cell.code}</div>
             <div className="label-secondary mt-2 text-[11px] text-slate-600">{activeRack?.name || activeRack?.code} · {cell.side === "front" ? "Лицевая" : "Задняя"}</div>
             <div className="label-secondary mt-1 text-[10px] text-slate-500">Полка {cell.rowIndex + 1} · место {String.fromCharCode(65 + cell.columnIndex)}</div>
             <div className="label-secondary mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500"><QrCode size={11} /> РУССКИЙ ЛЕС · СКЛАД</div>
