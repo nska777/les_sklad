@@ -29,7 +29,7 @@ function nearbyLabel(svg: SVGSVGElement) {
 function openQrPrintPreview(preview: NonNullable<Preview>) {
   const printWindow = window.open("", "_blank", "width=1000,height=760");
   if (!printWindow) {
-    window.alert("Браузер заблокировал окно предпросмотра. Разрешите всплывающие окна для сайта и попробуйте ещё раз.");
+    window.alert("Браузер заблокировал окно печати. Разрешите всплывающие окна для сайта и попробуйте ещё раз.");
     return;
   }
 
@@ -46,48 +46,107 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
-<title>QR-код ${safeLabel}</title>
+<title></title>
 <style>
-  @page { size: A4 portrait; margin: 10mm; }
+  @page { size: A4 portrait; margin: 0; }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #111827; background: #fff; }
-  .toolbar { position: sticky; top: 0; display: flex; justify-content: center; gap: 10px; padding: 14px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
-  .toolbar button { border: 0; border-radius: 12px; padding: 11px 18px; font-size: 15px; font-weight: 700; cursor: pointer; }
-  .print { background: #ff6b2c; color: white; }
-  .close { background: #e5e7eb; color: #111827; }
-  .sheet { width: 100%; min-height: calc(297mm - 20mm); display: flex; align-items: center; justify-content: center; }
-  .label { width: 90mm; height: 36mm; display: flex; align-items: center; gap: 6mm; padding: 3mm 5mm; border: .4mm solid #111827; border-radius: 2.5mm; background: #fff; overflow: hidden; }
-  .qr { width: 29mm; height: 29mm; flex: 0 0 29mm; display: flex; align-items: center; justify-content: center; }
-  .qr svg { width: 29mm !important; height: 29mm !important; display: block; }
-  .meta { min-width: 0; flex: 1; display: flex; flex-direction: column; justify-content: center; }
-  .kind { font-size: 7.5pt; letter-spacing: .16em; text-transform: uppercase; color: #64748b; font-weight: 800; }
-  .code { margin-top: 1.8mm; font: 900 30pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.035em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .brand { margin-top: 1.8mm; font-size: 7.5pt; color: #64748b; font-weight: 700; letter-spacing: .04em; }
-  @media print {
-    .toolbar { display: none !important; }
-    .sheet { min-height: auto; justify-content: flex-start; align-items: flex-start; }
+  html, body {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #111827;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    padding: 10mm;
+    overflow: hidden;
+  }
+  .label {
+    width: 90mm;
+    height: 36mm;
+    display: flex;
+    align-items: center;
+    gap: 6mm;
+    padding: 3mm 5mm;
+    border: .4mm solid #111827;
+    border-radius: 2.5mm;
+    background: #fff;
+    overflow: hidden;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .qr {
+    width: 29mm;
+    height: 29mm;
+    flex: 0 0 29mm;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .qr svg {
+    width: 29mm !important;
+    height: 29mm !important;
+    display: block;
+  }
+  .meta {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .kind {
+    font-size: 7.5pt;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: #64748b;
+    font-weight: 900;
+  }
+  .code {
+    margin-top: 1.8mm;
+    font: 950 30pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: -.035em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #020617;
+  }
+  .brand {
+    margin-top: 1.8mm;
+    font-size: 7.5pt;
+    color: #64748b;
+    font-weight: 800;
+    letter-spacing: .04em;
+  }
+  @media screen {
+    body { display: flex; align-items: flex-start; justify-content: flex-start; }
   }
 </style>
 </head>
 <body>
-  <div class="toolbar">
-    <button class="print" onclick="window.print()">Распечатать</button>
-    <button class="close" onclick="window.close()">Закрыть</button>
-  </div>
-  <main class="sheet">
-    <section class="label">
-      <div class="qr">${preview.markup}</div>
-      <div class="meta">
-        <div class="kind">QR-код ячейки</div>
-        <div class="code">${safeLabel}</div>
-        <div class="brand">РУССКИЙ ЛЕС · СКЛАД</div>
-      </div>
-    </section>
-  </main>
+  <section class="label">
+    <div class="qr">${preview.markup}</div>
+    <div class="meta">
+      <div class="kind">Ячейка</div>
+      <div class="code">${safeLabel}</div>
+      <div class="brand">РУССКИЙ ЛЕС · СКЛАД</div>
+    </div>
+  </section>
+<script>
+  window.addEventListener('load', function () {
+    window.setTimeout(function () {
+      window.focus();
+      window.print();
+    }, 120);
+  });
+</script>
 </body>
 </html>`);
   printWindow.document.close();
-  printWindow.focus();
 }
 
 export function CodeZoom() {
@@ -206,10 +265,10 @@ export function CodeZoom() {
             className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
             style={{ pointerEvents: "auto" }}
           >
-            <Printer size={18} pointerEvents="none" /> Предпросмотр и печать
+            <Printer size={18} pointerEvents="none" /> Печать этикетки
           </button>
         </div>
-        <div className="mt-3 text-center text-xs text-slate-400">Закрыть — крестик справа сверху или Esc</div>
+        <div className="mt-3 text-center text-xs text-slate-400">Откроется чистое окно печати только с этикеткой</div>
       </div>
     </div>
   );
