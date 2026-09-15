@@ -35,7 +35,7 @@ function nearbyLabel(svg: SVGSVGElement) {
 }
 
 function openQrPrintPreview(preview: NonNullable<Preview>) {
-  const printWindow = window.open("", "_blank", "width=1000,height=760");
+  const printWindow = window.open("", "_blank", "width=1200,height=900");
   if (!printWindow) {
     window.alert("Браузер заблокировал окно печати. Разрешите всплывающие окна для сайта и попробуйте ещё раз.");
     return;
@@ -56,7 +56,7 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
 <meta charset="utf-8" />
 <title>QR ${safeLabel}</title>
 <style>
-  @page { size: A4 portrait; margin: 0; }
+  @page { size: A4 landscape; margin: 0; }
   * { box-sizing: border-box; }
   html, body {
     width: 100%;
@@ -94,22 +94,22 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
   .close { background: #e5e7eb; color: #111827; }
   .sheet {
     width: 100%;
-    min-height: calc(297mm - 20mm);
+    min-height: calc(210mm - 20mm);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 10mm;
+    padding: 5mm;
     overflow: visible;
   }
   .label {
-    width: 90mm;
-    height: 36mm;
+    width: 270mm;
+    height: 108mm;
     display: flex;
     align-items: center;
-    gap: 6mm;
-    padding: 3mm 5mm;
-    border: .4mm solid #111827;
-    border-radius: 2.5mm;
+    gap: 18mm;
+    padding: 9mm 15mm;
+    border: 1.2mm solid #111827;
+    border-radius: 7.5mm;
     background: #fff;
     overflow: hidden;
     transform-origin: center center;
@@ -118,16 +118,16 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     page-break-inside: avoid;
   }
   .qr {
-    width: 29mm;
-    height: 29mm;
-    flex: 0 0 29mm;
+    width: 87mm;
+    height: 87mm;
+    flex: 0 0 87mm;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .qr svg {
-    width: 29mm !important;
-    height: 29mm !important;
+    width: 87mm !important;
+    height: 87mm !important;
     display: block;
   }
   .meta {
@@ -138,15 +138,15 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     justify-content: center;
   }
   .kind {
-    font-size: 7.5pt;
+    font-size: 22.5pt;
     letter-spacing: .16em;
     text-transform: uppercase;
     color: #64748b;
     font-weight: 900;
   }
   .code {
-    margin-top: 1.8mm;
-    font: 950 30pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin-top: 5.4mm;
+    font: 950 90pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: -.035em;
     white-space: nowrap;
     overflow: hidden;
@@ -154,8 +154,8 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     color: #020617;
   }
   .brand {
-    margin-top: 1.8mm;
-    font-size: 7.5pt;
+    margin-top: 5.4mm;
+    font-size: 22.5pt;
     color: #64748b;
     font-weight: 800;
     letter-spacing: .04em;
