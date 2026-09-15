@@ -55,12 +55,14 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
 <head>
 <meta charset="utf-8" />
 <title>QR ${safeLabel}</title>
+<style id="pageStyle">
+  @page { size: 170mm 68mm; margin: 0; }
+</style>
 <style>
-  @page { size: A4 portrait; margin: 14mm; }
   * { box-sizing: border-box; }
   html, body {
-    width: 100%;
-    min-height: 100%;
+    width: 170mm;
+    height: 68mm;
     margin: 0;
     padding: 0;
     background: #fff;
@@ -70,16 +72,20 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     print-color-adjust: exact;
   }
   .toolbar {
-    position: sticky;
-    top: 0;
+    position: fixed;
+    top: 12px;
+    left: 50%;
     z-index: 20;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 10px;
-    padding: 14px;
-    background: #f8fafc;
-    border-bottom: 1px solid #e5e7eb;
+    padding: 10px;
+    background: rgba(248,250,252,.96);
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    transform: translateX(-50%);
+    box-shadow: 0 8px 30px rgba(15,23,42,.12);
   }
   .toolbar button {
     border: 0;
@@ -93,24 +99,22 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
   .rotate { background: #2563eb; color: #fff; }
   .close { background: #e5e7eb; color: #111827; }
   .sheet {
-    width: 100%;
-    min-height: calc(297mm - 28mm);
+    width: 170mm;
+    height: 68mm;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 12mm;
-    overflow: visible;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
   }
   .label {
     width: 170mm;
     height: 68mm;
-    max-width: 100%;
     display: flex;
     align-items: center;
-    gap: 11mm;
-    padding: 6mm 10mm;
-    border: 1px solid #dbe3ee;
-    border-radius: 6mm;
+    gap: 8mm;
+    padding: 5mm 7mm;
     background: #fff;
     overflow: hidden;
     transform-origin: center center;
@@ -119,16 +123,16 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     page-break-inside: avoid;
   }
   .qr {
-    width: 55mm;
-    height: 55mm;
-    flex: 0 0 55mm;
+    width: 58mm;
+    height: 58mm;
+    flex: 0 0 58mm;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .qr svg {
-    width: 55mm !important;
-    height: 55mm !important;
+    width: 58mm !important;
+    height: 58mm !important;
     display: block;
   }
   .meta {
@@ -139,33 +143,43 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     justify-content: center;
   }
   .kind {
-    font-size: 13pt;
+    font-size: 14pt;
     letter-spacing: .18em;
     text-transform: uppercase;
     color: #64748b;
-    font-weight: 700;
+    font-weight: 800;
   }
   .code {
-    margin-top: 4mm;
-    font: 800 54pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: -.035em;
+    margin-top: 3mm;
+    font: 900 58pt/.94 ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: -.04em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     color: #020617;
   }
   .brand {
-    margin-top: 4mm;
+    margin-top: 3mm;
     font-size: 13pt;
     color: #64748b;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: .04em;
   }
   .angle { min-width: 54px; display: inline-block; text-align: left; }
   @media print {
+    html, body, .sheet {
+      width: 170mm !important;
+      height: 68mm !important;
+      min-width: 170mm !important;
+      min-height: 68mm !important;
+      max-width: 170mm !important;
+      max-height: 68mm !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+    }
     .toolbar { display: none !important; }
-    .sheet { min-height: 100vh; padding: 0; overflow: visible; }
-    .label { border: 0; }
+    .label { box-shadow: none !important; }
   }
 </style>
 </head>
@@ -175,7 +189,7 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     <button id="rotateButton" class="rotate" onclick="rotateLabel()">↻ Повернуть 90° <span class="angle">0°</span></button>
     <button class="close" onclick="window.close()">Закрыть</button>
   </div>
-  <main class="sheet">
+  <main id="printSheet" class="sheet">
     <section id="printLabel" class="label">
       <div class="qr">${preview.markup}</div>
       <div class="meta">
@@ -190,8 +204,21 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
   function rotateLabel() {
     labelAngle = (labelAngle + 90) % 360;
     var label = document.getElementById('printLabel');
+    var sheet = document.getElementById('printSheet');
+    var pageStyle = document.getElementById('pageStyle');
     var angle = document.querySelector('#rotateButton .angle');
+    var vertical = labelAngle === 90 || labelAngle === 270;
+
     if (label) label.style.transform = 'rotate(' + labelAngle + 'deg)';
+    if (sheet) {
+      sheet.style.width = vertical ? '68mm' : '170mm';
+      sheet.style.height = vertical ? '170mm' : '68mm';
+    }
+    document.documentElement.style.width = vertical ? '68mm' : '170mm';
+    document.documentElement.style.height = vertical ? '170mm' : '68mm';
+    document.body.style.width = vertical ? '68mm' : '170mm';
+    document.body.style.height = vertical ? '170mm' : '68mm';
+    if (pageStyle) pageStyle.textContent = '@page { size: ' + (vertical ? '68mm 170mm' : '170mm 68mm') + '; margin: 0; }';
     if (angle) angle.textContent = labelAngle + '°';
   }
 </script>
