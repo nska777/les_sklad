@@ -102,14 +102,14 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     overflow: visible;
   }
   .label {
-    width: 135mm;
-    height: 54mm;
+    width: 155mm;
+    height: 62mm;
     display: flex;
     align-items: center;
-    gap: 9mm;
-    padding: 4.5mm 7.5mm;
-    border: .6mm solid #111827;
-    border-radius: 3.75mm;
+    gap: 10mm;
+    padding: 5mm 8.5mm;
+    border: .7mm solid #111827;
+    border-radius: 4.2mm;
     background: #fff;
     overflow: hidden;
     transform-origin: center center;
@@ -118,16 +118,16 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     page-break-inside: avoid;
   }
   .qr {
-    width: 43.5mm;
-    height: 43.5mm;
-    flex: 0 0 43.5mm;
+    width: 50mm;
+    height: 50mm;
+    flex: 0 0 50mm;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .qr svg {
-    width: 43.5mm !important;
-    height: 43.5mm !important;
+    width: 50mm !important;
+    height: 50mm !important;
     display: block;
   }
   .meta {
@@ -138,15 +138,15 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     justify-content: center;
   }
   .kind {
-    font-size: 11.25pt;
+    font-size: 12.5pt;
     letter-spacing: .16em;
     text-transform: uppercase;
     color: #64748b;
     font-weight: 900;
   }
   .code {
-    margin-top: 2.7mm;
-    font: 950 45pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin-top: 3mm;
+    font: 950 50pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: -.035em;
     white-space: nowrap;
     overflow: hidden;
@@ -154,8 +154,8 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     color: #020617;
   }
   .brand {
-    margin-top: 2.7mm;
-    font-size: 11.25pt;
+    margin-top: 3mm;
+    font-size: 12.5pt;
     color: #64748b;
     font-weight: 800;
     letter-spacing: .04em;
