@@ -17,18 +17,14 @@ function findLargeSquareSvg(target: EventTarget | null) {
 }
 
 function nearbyLabel(svg: SVGSVGElement) {
-  // 1) Явная подпись, если она задана рядом с QR.
   const explicit = svg.closest<HTMLElement>("[data-code-label]")?.dataset.codeLabel
     || svg.parentElement?.parentElement?.querySelector<HTMLElement>("[data-code-label]")?.dataset.codeLabel;
   if (explicit?.trim()) return explicit.trim();
 
-  // 2) Этикетки склада: берём именно крупный код ячейки из карточки,
-  // а не общий текст контейнера. Так ST1-B-4A не превращается в «QR-код».
   const cellCard = svg.closest<HTMLElement>(".cell-label");
   const cellCode = cellCard?.querySelector<HTMLElement>(".cell-code")?.textContent?.trim();
   if (cellCode) return cellCode;
 
-  // 3) Карточка ячейки в других разделах.
   const nearbyCode = svg.parentElement?.parentElement?.querySelector<HTMLElement>(".font-mono")?.textContent?.trim();
   if (nearbyCode) return nearbyCode;
 
@@ -58,13 +54,13 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
-<title></title>
+<title>QR ${safeLabel}</title>
 <style>
   @page { size: A4 portrait; margin: 0; }
   * { box-sizing: border-box; }
   html, body {
-    width: 210mm;
-    min-height: 297mm;
+    width: 100%;
+    min-height: 100%;
     margin: 0;
     padding: 0;
     background: #fff;
@@ -73,9 +69,37 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  body {
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .toolbar button {
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 18px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .print { background: #ff6b2c; color: #fff; }
+  .rotate { background: #2563eb; color: #fff; }
+  .close { background: #e5e7eb; color: #111827; }
+  .sheet {
+    width: 100%;
+    min-height: calc(297mm - 20mm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 10mm;
-    overflow: hidden;
+    overflow: visible;
   }
   .label {
     width: 90mm;
@@ -88,6 +112,8 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     border-radius: 2.5mm;
     background: #fff;
     overflow: hidden;
+    transform-origin: center center;
+    transition: transform .2s ease;
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -134,31 +160,44 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     font-weight: 800;
     letter-spacing: .04em;
   }
+  .angle { min-width: 54px; display: inline-block; text-align: left; }
+  @media print {
+    .toolbar { display: none !important; }
+    .sheet { min-height: 100vh; padding: 0; }
+    .label { border-color: #111827; }
+  }
 </style>
 </head>
 <body>
-  <section class="label">
-    <div class="qr">${preview.markup}</div>
-    <div class="meta">
-      <div class="kind">Ячейка</div>
-      <div class="code">${safeLabel}</div>
-      <div class="brand">РУССКИЙ ЛЕС · СКЛАД</div>
-    </div>
-  </section>
+  <div class="toolbar">
+    <button class="print" onclick="window.print()">Распечатать</button>
+    <button id="rotateButton" class="rotate" onclick="rotateLabel()">↻ Повернуть 90° <span class="angle">0°</span></button>
+    <button class="close" onclick="window.close()">Закрыть</button>
+  </div>
+  <main class="sheet">
+    <section id="printLabel" class="label">
+      <div class="qr">${preview.markup}</div>
+      <div class="meta">
+        <div class="kind">Ячейка</div>
+        <div class="code">${safeLabel}</div>
+        <div class="brand">РУССКИЙ ЛЕС · СКЛАД</div>
+      </div>
+    </section>
+  </main>
 <script>
-  window.addEventListener('afterprint', function () {
-    window.close();
-  });
-  window.addEventListener('load', function () {
-    window.setTimeout(function () {
-      window.focus();
-      window.print();
-    }, 160);
-  });
+  var labelAngle = 0;
+  function rotateLabel() {
+    labelAngle = (labelAngle + 90) % 360;
+    var label = document.getElementById('printLabel');
+    var angle = document.querySelector('#rotateButton .angle');
+    if (label) label.style.transform = 'rotate(' + labelAngle + 'deg)';
+    if (angle) angle.textContent = labelAngle + '°';
+  }
 </script>
 </body>
 </html>`);
   printWindow.document.close();
+  printWindow.focus();
 }
 
 export function CodeZoom() {
@@ -279,10 +318,10 @@ export function CodeZoom() {
             className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 active:scale-[.98]"
             style={{ pointerEvents: "auto" }}
           >
-            <Printer size={18} pointerEvents="none" /> Печать этикетки
+            <Printer size={18} pointerEvents="none" /> Предпросмотр и печать
           </button>
         </div>
-        <div className="mt-3 text-center text-xs text-slate-400">После печати окно закроется автоматически</div>
+        <div className="mt-3 text-center text-xs text-slate-400">В окне печати можно повернуть всю QR-этикетку на 90° перед печатью</div>
       </div>
     </div>
   );
