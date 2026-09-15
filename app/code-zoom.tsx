@@ -56,7 +56,7 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
 <meta charset="utf-8" />
 <title>QR ${safeLabel}</title>
 <style>
-  @page { size: A4 portrait; margin: 0; }
+  @page { size: A4 portrait; margin: 14mm; }
   * { box-sizing: border-box; }
   html, body {
     width: 100%;
@@ -94,22 +94,23 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
   .close { background: #e5e7eb; color: #111827; }
   .sheet {
     width: 100%;
-    min-height: calc(297mm - 20mm);
+    min-height: calc(297mm - 28mm);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 10mm;
+    padding: 12mm;
     overflow: visible;
   }
   .label {
-    width: 155mm;
-    height: 62mm;
+    width: 170mm;
+    height: 68mm;
+    max-width: 100%;
     display: flex;
     align-items: center;
-    gap: 10mm;
-    padding: 5mm 8.5mm;
-    border: .7mm solid #111827;
-    border-radius: 4.2mm;
+    gap: 11mm;
+    padding: 6mm 10mm;
+    border: 1px solid #dbe3ee;
+    border-radius: 6mm;
     background: #fff;
     overflow: hidden;
     transform-origin: center center;
@@ -118,16 +119,16 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     page-break-inside: avoid;
   }
   .qr {
-    width: 50mm;
-    height: 50mm;
-    flex: 0 0 50mm;
+    width: 55mm;
+    height: 55mm;
+    flex: 0 0 55mm;
     display: flex;
     align-items: center;
     justify-content: center;
   }
   .qr svg {
-    width: 50mm !important;
-    height: 50mm !important;
+    width: 55mm !important;
+    height: 55mm !important;
     display: block;
   }
   .meta {
@@ -138,15 +139,15 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     justify-content: center;
   }
   .kind {
-    font-size: 12.5pt;
-    letter-spacing: .16em;
+    font-size: 13pt;
+    letter-spacing: .18em;
     text-transform: uppercase;
     color: #64748b;
-    font-weight: 900;
+    font-weight: 700;
   }
   .code {
-    margin-top: 3mm;
-    font: 950 50pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
+    margin-top: 4mm;
+    font: 800 54pt/.96 ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: -.035em;
     white-space: nowrap;
     overflow: hidden;
@@ -154,17 +155,17 @@ function openQrPrintPreview(preview: NonNullable<Preview>) {
     color: #020617;
   }
   .brand {
-    margin-top: 3mm;
-    font-size: 12.5pt;
+    margin-top: 4mm;
+    font-size: 13pt;
     color: #64748b;
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: .04em;
   }
   .angle { min-width: 54px; display: inline-block; text-align: left; }
   @media print {
     .toolbar { display: none !important; }
-    .sheet { min-height: 100vh; padding: 0; }
-    .label { border-color: #111827; }
+    .sheet { min-height: 100vh; padding: 0; overflow: visible; }
+    .label { border: 0; }
   }
 </style>
 </head>
