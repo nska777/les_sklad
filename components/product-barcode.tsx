@@ -55,34 +55,52 @@ function openBarcodePrintPreview(value: string, name: string, svgMarkup: string)
 <style>
   @page { size: A4 portrait; margin: 14mm; }
   * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
   body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; color: #111827; background: #fff; }
-  .toolbar { position: sticky; top: 0; display: flex; justify-content: center; gap: 10px; padding: 14px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
+  .toolbar { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; padding: 14px; background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
   .toolbar button { border: 0; border-radius: 12px; padding: 11px 18px; font-size: 15px; font-weight: 700; cursor: pointer; }
   .print { background: #ff6b2c; color: white; }
+  .rotate { background: #2563eb; color: white; }
   .close { background: #e5e7eb; color: #111827; }
-  .sheet { width: 100%; min-height: calc(297mm - 28mm); display: flex; align-items: center; justify-content: center; }
-  .label { width: 170mm; max-width: 100%; text-align: center; padding: 14mm 12mm; border: 1px solid #dbe3ee; border-radius: 6mm; }
+  .sheet { width: 100%; min-height: calc(297mm - 28mm); display: flex; align-items: center; justify-content: center; overflow: visible; padding: 12mm; }
+  .label { width: 170mm; max-width: 100%; text-align: center; padding: 14mm 12mm; border: 1px solid #dbe3ee; border-radius: 6mm; background: #fff; transform-origin: center center; transition: transform .2s ease; }
   .kind { font-size: 13pt; letter-spacing: .18em; text-transform: uppercase; color: #64748b; font-weight: 700; }
   .name { margin-top: 5mm; font-size: 24pt; line-height: 1.15; font-weight: 800; }
   .code { margin-top: 4mm; font: 700 17pt ui-monospace, SFMono-Regular, Menlo, monospace; }
   .barcode { margin-top: 12mm; display: flex; justify-content: center; overflow: hidden; }
   .barcode svg { width: 145mm !important; max-width: 100% !important; height: auto !important; }
-  @media print { .toolbar { display: none !important; } .sheet { min-height: auto; } .label { border: 0; } }
+  .angle { min-width: 54px; display: inline-block; text-align: left; }
+  @media print {
+    .toolbar { display: none !important; }
+    .sheet { min-height: 100vh; padding: 0; overflow: visible; }
+    .label { border: 0; }
+  }
 </style>
 </head>
 <body>
   <div class="toolbar">
     <button class="print" onclick="window.print()">Распечатать</button>
+    <button id="rotateButton" class="rotate" onclick="rotateLabel()">↻ Повернуть 90° <span class="angle">0°</span></button>
     <button class="close" onclick="window.close()">Закрыть</button>
   </div>
   <main class="sheet">
-    <section class="label">
+    <section id="printLabel" class="label">
       <div class="kind">Штрихкод материала</div>
       ${name ? `<div class="name">${escapeHtml(name)}</div>` : ""}
       <div class="code">${escapeHtml(value)}</div>
       <div class="barcode">${svgMarkup}</div>
     </section>
   </main>
+<script>
+  var labelAngle = 0;
+  function rotateLabel() {
+    labelAngle = (labelAngle + 90) % 360;
+    var label = document.getElementById('printLabel');
+    var angle = document.querySelector('#rotateButton .angle');
+    if (label) label.style.transform = 'rotate(' + labelAngle + 'deg)';
+    if (angle) angle.textContent = labelAngle + '°';
+  }
+</script>
 </body>
 </html>`);
   printWindow.document.close();
@@ -226,7 +244,7 @@ export function ProductBarcode({ value, productName, name, compact = false, clas
                 <Printer size={18} pointerEvents="none" /> Предпросмотр и печать
               </button>
             </div>
-            <div className="mt-3 text-center text-xs text-slate-400">Закрыть — крестик справа сверху, клик по фону или Esc</div>
+            <div className="mt-3 text-center text-xs text-slate-400">В окне печати можно повернуть всю этикетку на 90° перед печатью</div>
           </div>
         </div>,
         document.body,
