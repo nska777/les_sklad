@@ -78,9 +78,9 @@ export function RackStockExportActions() {
     <>
       {rackTarget && rackCode && createPortal(
         <a
-          href={`/api/stock-export?scope=rack&rackCode=${encodeURIComponent(rackCode)}`}
+          href={`/api/rack-stock-export?rackCode=${encodeURIComponent(rackCode)}`}
           className={buttonClass}
-          title={`Скачать остатки стеллажа ${rackCode} в Excel`}
+          title={`Скачать весь стеллаж ${rackCode}: все ячейки и содержимое`}
         >
           <FileSpreadsheet size={16} /> Excel стеллажа {rackCode}
         </a>,
