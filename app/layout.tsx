@@ -11,10 +11,11 @@ import { AddStockExceptionHelper } from "@/app/add-stock-exception-helper";
 import { MaterialsAddAction } from "@/app/materials-add-action";
 import { IssueMobileScanTools, LiveIssueMonitor } from "@/app/issue-mobile-scan-tools";
 import { RackVisualAddCellHelper } from "@/app/rack-visual-add-cell-helper";
+import { PageTitleController } from "@/app/page-title-controller";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Русский Лес — Склад",
+  title: "Склад",
   description: "Приёмка, адресное хранение и выдача материалов",
   applicationName: "Русский Лес — Склад",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "РЛ Склад" },
@@ -34,6 +35,7 @@ export default function RootLayout({
     <html lang="ru">
       <body className="antialiased">
         <PwaRegister />
+        <PageTitleController />
         <MovementDateMaintenance />
         <OnecCellOccupancyGuard />
         <AddStockExceptionHelper />
