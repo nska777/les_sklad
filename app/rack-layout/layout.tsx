@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ExcessStockPanel } from "@/app/excess-stock-panel";
 import { RackOrderFix } from "./rack-order-fix";
 
 export default function RackLayout({ children }: { children: ReactNode }) {
@@ -44,6 +45,7 @@ export default function RackLayout({ children }: { children: ReactNode }) {
         }
       `}</style>
       <RackOrderFix />
+      <ExcessStockPanel context="rack" />
       {children}
     </>
   );
