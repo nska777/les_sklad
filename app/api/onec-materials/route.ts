@@ -115,6 +115,7 @@ export async function GET(request: Request) {
         om.available_1c::double precision AS "available1c",
         om.linked_product_id AS "linkedProductId", p.sku AS "internalCode", p.barcode,
         COALESCE(SUM(s.quantity), 0)::double precision AS "placedQuantity",
+        GREATEST(COALESCE(SUM(s.quantity), 0) - om.available_1c, 0)::double precision AS "excessQuantity",
         COALESCE(
           json_agg(
             json_build_object('cellId', c.id, 'cellCode', c.code, 'quantity', s.quantity)
@@ -132,10 +133,22 @@ export async function GET(request: Request) {
       LIMIT ${pageSize} OFFSET ${safeOffset}
     `);
 
-    const statsResult = await db.execute(sql`SELECT COUNT(*)::int AS total, COUNT(linked_product_id)::int AS linked FROM onec_materials`);
+    const statsResult = await db.execute(sql`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(om.linked_product_id)::int AS linked,
+        COUNT(*) FILTER (WHERE COALESCE(st.total, 0) > om.available_1c)::int AS "excessItems",
+        COALESCE(SUM(GREATEST(COALESCE(st.total, 0) - om.available_1c, 0)), 0)::double precision AS "excessUnits"
+      FROM onec_materials om
+      LEFT JOIN (
+        SELECT product_id, SUM(quantity)::double precision AS total
+        FROM stocks
+        GROUP BY product_id
+      ) st ON st.product_id = om.linked_product_id
+    `);
     return Response.json({
       items: rowsOf(result),
-      stats: rowsOf(statsResult)[0] || { total: 0, linked: 0 },
+      stats: rowsOf(statsResult)[0] || { total: 0, linked: 0, excessItems: 0, excessUnits: 0 },
       pagination: { page: safePage, pageSize, pages, filteredTotal },
     });
   } catch (error) {
@@ -180,13 +193,7 @@ export async function POST(request: Request) {
       if (!material) return Response.json({ error: "Материал из 1С не найден" }, { status: 404 });
 
       const placedQuantity = await placedTotal(db, material.linkedProductId);
-      const remaining = Math.max(0, Number(material.available1c) - placedQuantity);
-      if (remaining <= 0) {
-        return Response.json({ error: `Весь доступный остаток из 1С уже размещён (${material.available1c} шт.)` }, { status: 409 });
-      }
-      if (quantity > remaining + 1e-9) {
-        return Response.json({ error: `Нельзя разместить ${quantity} шт. Осталось по 1С: ${remaining} шт.` }, { status: 409 });
-      }
+      const remainingBefore = Number(material.available1c) - placedQuantity;
 
       const [cell] = await db.select().from(cells).where(eq(cells.id, cellId)).limit(1);
       if (!cell || cell.blocked) return Response.json({ error: "Ячейка недоступна" }, { status: 409 });
@@ -239,26 +246,44 @@ export async function POST(request: Request) {
 
       await db.insert(stocks).values({ productId, cellId, quantity });
 
+      const totalAfter = placedQuantity + quantity;
+      const excessAfter = Math.max(0, totalAfter - Number(material.available1c));
+      const isExcess = excessAfter > 1e-9;
+
       await db.insert(movements).values({
         id: crypto.randomUUID(),
-        type: "Первичный учёт из 1С",
+        type: isExcess ? "Первичный учёт · излишек" : "Первичный учёт из 1С",
         productId,
         cellId,
         quantity,
         operator,
-        source: "onec-reference",
-        comment: "Размещение по справочнику 1С",
+        source: isExcess ? "onec-excess" : "onec-reference",
+        comment: isExcess
+          ? `Фактический остаток выше 1С. По 1С: ${material.available1c}; факт после размещения: ${totalAfter}; излишек: ${excessAfter}`
+          : "Размещение по справочнику 1С",
       });
       await db.insert(activityLogs).values({
         id: crypto.randomUUID(),
-        action: "Размещение из 1С",
+        action: isExcess ? "Размещение излишка" : "Размещение из 1С",
         entityType: "Материал",
         entityId: productId,
         entityName: `${material.name} (${code})`,
-        details: `${quantity} шт. → ${cell.code}`,
+        details: isExcess
+          ? `${quantity} шт. → ${cell.code}. Факт ${totalAfter} шт., 1С ${material.available1c} шт., излишек ${excessAfter} шт.`
+          : `${quantity} шт. → ${cell.code}`,
         operator,
       });
-      return Response.json({ ok: true, productId, internalCode: code, barcode: code, cellCode: cell.code, quantity, remainingAfter: remaining - quantity });
+      return Response.json({
+        ok: true,
+        productId,
+        internalCode: code,
+        barcode: code,
+        cellCode: cell.code,
+        quantity,
+        remainingAfter: Number(material.available1c) - totalAfter,
+        excessAfter,
+        wasExcessBefore: remainingBefore < 0,
+      });
     }
 
     if (action === "correctLocation") {
@@ -286,9 +311,6 @@ export async function POST(request: Request) {
 
       const totalBefore = await placedTotal(db, productId);
       const totalAfter = totalBefore - oldQuantity + newQuantity;
-      if (delta > 0 && totalAfter > Number(material.available1c) + 1e-9) {
-        return Response.json({ error: `После исправления получится ${totalAfter} шт., а доступно по 1С ${material.available1c} шт.` }, { status: 409 });
-      }
 
       if (newQuantity <= 0) {
         if (stock) await db.delete(stocks).where(sql`${stocks.productId} = ${productId} AND ${stocks.cellId} = ${cellId}`);
@@ -298,15 +320,16 @@ export async function POST(request: Request) {
         await db.insert(stocks).values({ productId, cellId, quantity: newQuantity });
       }
 
+      const excessAfter = Math.max(0, totalAfter - Number(material.available1c));
       await db.insert(movements).values({
         id: crypto.randomUUID(),
-        type: "Корректировка размещения",
+        type: excessAfter > 0 ? "Корректировка · излишек" : "Корректировка размещения",
         productId,
         cellId,
         quantity: delta,
         operator,
-        source: "onec-correction",
-        comment: `Исправление ${oldQuantity} → ${newQuantity}. Причина: ${reason}`,
+        source: excessAfter > 0 ? "onec-excess-correction" : "onec-correction",
+        comment: `Исправление ${oldQuantity} → ${newQuantity}. Причина: ${reason}${excessAfter > 0 ? `. Излишек относительно 1С: ${excessAfter}` : ""}`,
       });
       await db.insert(activityLogs).values({
         id: crypto.randomUUID(),
@@ -314,7 +337,7 @@ export async function POST(request: Request) {
         entityType: "Материал",
         entityId: productId,
         entityName: `${material.name} (${product.sku})`,
-        details: `${cell.code}: ${oldQuantity} → ${newQuantity} шт. · ${reason}`,
+        details: `${cell.code}: ${oldQuantity} → ${newQuantity} шт. · ${reason}${excessAfter > 0 ? ` · излишек ${excessAfter} шт.` : ""}`,
         operator,
       });
 
@@ -325,6 +348,7 @@ export async function POST(request: Request) {
         delta,
         totalAfter,
         remainingAfter: Number(material.available1c) - totalAfter,
+        excessAfter,
       });
     }
 
