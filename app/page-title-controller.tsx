@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 
 const TITLES: Array<[string, string]> = [
+  ["/materials/excess", "Излишки"],
   ["/rack-layout", "Стеллажи"],
   ["/transfer", "Перемещение"],
   ["/materials", "Материалы"],
