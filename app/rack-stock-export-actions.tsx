@@ -12,10 +12,15 @@ function findRackTarget() {
   const header = scene.firstElementChild as HTMLElement | null;
   if (!header) return { target: null as HTMLElement | null, rackCode: "" };
 
-  const label = Array.from(header.querySelectorAll<HTMLElement>("div")).find((node) =>
-    /^Стеллаж\s+/i.test(node.textContent?.trim() || ""),
-  );
-  const rackCode = label?.textContent?.trim().replace(/^Стеллаж\s+/i, "").split(/\s+/)[0] || "";
+  // В заголовке стеллажа первый блок слева имеет структуру:
+  // <div><div>Стеллаж CODE</div><h2>NAME</h2>...</div>
+  // Берём код только из внутренней строки "Стеллаж CODE", чтобы название
+  // стеллажа не склеивалось с кодом (например FB + FB4 => F BFB4).
+  const infoBlock = header.firstElementChild as HTMLElement | null;
+  const label = infoBlock?.querySelector<HTMLElement>(":scope > div");
+  const labelText = label?.textContent?.trim() || "";
+  const rackMatch = labelText.match(/^Стеллаж\s+([^\s]+)/i);
+  const rackCode = rackMatch?.[1]?.trim() || "";
 
   const children = Array.from(header.children).filter((node): node is HTMLElement => node instanceof HTMLElement);
   const target = children.length > 1 ? children[children.length - 1] : null;
