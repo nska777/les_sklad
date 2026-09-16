@@ -1,23 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Loader2, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-
-type PendingAdd = {
-  body: Record<string, unknown>;
-  originalResponse: Response;
-  details: {
-    error?: string;
-    available1c?: number;
-    currentTotal?: number;
-    remaining?: number;
-  };
-  resolve: (response: Response) => void;
-};
+import { useEffect, useRef } from "react";
 
 function isRackAddStock(input: RequestInfo | URL, init?: RequestInit) {
   if ((init?.method || "GET").toUpperCase() !== "POST") return false;
@@ -25,10 +8,14 @@ function isRackAddStock(input: RequestInfo | URL, init?: RequestInit) {
   return url === "/api/rack-layout" || url.endsWith("/api/rack-layout");
 }
 
+/**
+ * Фактический склад — источник истины. 1С используется только как ориентир.
+ * Старый /api/rack-layout всё ещё возвращает 409 при превышении остатка 1С,
+ * поэтому здесь такой ответ автоматически переводится в дополнительное
+ * оприходование. Пользователь больше не упирается в лимит и не должен
+ * подтверждать излишек отдельным диалогом.
+ */
 export function AddStockExceptionHelper() {
-  const [pending, setPending] = useState<PendingAdd | null>(null);
-  const [reason, setReason] = useState("");
-  const [saving, setSaving] = useState(false);
   const originalFetchRef = useRef<typeof window.fetch | null>(null);
 
   useEffect(() => {
@@ -53,19 +40,26 @@ export function AddStockExceptionHelper() {
       const response = await originalFetch(input, init);
       if (response.status !== 409) return response;
 
-      let details: PendingAdd["details"] = {};
+      let details: { available1c?: number; currentTotal?: number } = {};
       try {
-        details = await response.clone().json() as PendingAdd["details"];
+        details = await response.clone().json() as typeof details;
       } catch {
         return response;
       }
 
-      const isLimitError = typeof details.available1c === "number" && typeof details.currentTotal === "number";
-      if (!isLimitError) return response;
+      const isOnecLimit = typeof details.available1c === "number" && typeof details.currentTotal === "number";
+      if (!isOnecLimit) return response;
 
-      return new Promise<Response>((resolve) => {
-        setReason("");
-        setPending({ body: body!, originalResponse: response, details, resolve });
+      return originalFetch("/api/rack-layout/add-stock-exception", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cellId: body.cellId,
+          productId: body.productId,
+          quantity: body.quantity,
+          operator: body.operator,
+          reason: "Фактический излишек относительно остатка 1С",
+        }),
       });
     };
 
@@ -75,72 +69,5 @@ export function AddStockExceptionHelper() {
     };
   }, []);
 
-  const cancel = () => {
-    if (!pending) return;
-    pending.resolve(pending.originalResponse);
-    setPending(null);
-    setReason("");
-  };
-
-  const confirm = async () => {
-    if (!pending || !reason.trim() || !originalFetchRef.current) return;
-    setSaving(true);
-    try {
-      const response = await originalFetchRef.current("/api/rack-layout/add-stock-exception", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cellId: pending.body.cellId,
-          productId: pending.body.productId,
-          quantity: pending.body.quantity,
-          operator: pending.body.operator,
-          reason: reason.trim(),
-        }),
-      });
-      pending.resolve(response);
-      setPending(null);
-      setReason("");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={!!pending} onOpenChange={(open) => { if (!open && !saving) cancel(); }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><AlertTriangle className="text-orange-500" /> Дополнительное оприходование</DialogTitle>
-          <DialogDescription>
-            По данным 1С доступное количество уже размещено или вводимое количество превышает остаток. Если товар действительно нашли на складе или его вернули, добавление разрешено только с обязательным комментарием.
-          </DialogDescription>
-        </DialogHeader>
-
-        {pending && <div className="mt-2 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900">
-          <div>По 1С доступно: <b>{pending.details.available1c ?? 0}</b></div>
-          <div className="mt-1">Сейчас фактически на складе: <b>{pending.details.currentTotal ?? 0}</b></div>
-          <div className="mt-1">Остаток по 1С: <b>{pending.details.remaining ?? 0}</b></div>
-        </div>}
-
-        <div className="mt-4">
-          <Label>Почему добавляем сверх остатка 1С *</Label>
-          <Input
-            autoFocus
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter" && reason.trim() && !saving) void confirm(); }}
-            placeholder="Например: возврат со сборки, нашли коробку при переезде, возврат клиента"
-            className="mt-2"
-          />
-          <p className="mt-2 text-xs text-slate-500">Комментарий сохранится в истории ячейки и журнале операций.</p>
-        </div>
-
-        <DialogFooter className="mt-5">
-          <Button variant="outline" disabled={saving} onClick={cancel}>Отмена</Button>
-          <Button className="accent-button" disabled={saving || !reason.trim()} onClick={() => void confirm()}>
-            {saving ? <Loader2 className="animate-spin" /> : <Plus />} Добавить с комментарием
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+  return null;
 }
