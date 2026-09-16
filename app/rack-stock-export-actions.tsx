@@ -6,16 +6,19 @@ import { createPortal } from "react-dom";
 import { FileSpreadsheet } from "lucide-react";
 
 function findRackTarget() {
+  if (typeof document === "undefined") return { target: null as HTMLElement | null, rackCode: "" };
   const scene = document.getElementById("rack-3d-scene");
   if (!scene) return { target: null as HTMLElement | null, rackCode: "" };
   const text = scene.textContent || "";
   const match = text.match(/Стеллаж\s+([^\s]+)/i);
   const header = scene.firstElementChild as HTMLElement | null;
-  const target = header?.children?.[1] instanceof HTMLElement ? header.children[1] as HTMLElement : null;
+  const candidate = header?.children?.[1];
+  const target = candidate instanceof HTMLElement ? candidate : null;
   return { target, rackCode: match?.[1]?.trim() || "" };
 }
 
 function findCellTarget() {
+  if (typeof document === "undefined") return { target: null as HTMLElement | null, cellCode: "" };
   const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'));
   for (const dialog of dialogs) {
     const text = dialog.textContent || "";
