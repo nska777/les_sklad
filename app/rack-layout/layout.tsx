@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { ExcessStockPanel } from "@/app/excess-stock-panel";
 import { RackOrderFix } from "./rack-order-fix";
 
 export const metadata: Metadata = {
@@ -15,7 +14,6 @@ export default function RackLayout({ children }: { children: ReactNode }) {
           margin-top: 6rem !important;
         }
 
-        /* Реальный контейнер карточек стеллажей. Убираем горизонтальный скролл и переносим карточки вниз. */
         main section.panel div.overflow-x-auto.pb-1 {
           display: grid !important;
           grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)) !important;
@@ -50,7 +48,6 @@ export default function RackLayout({ children }: { children: ReactNode }) {
         }
       `}</style>
       <RackOrderFix />
-      <ExcessStockPanel context="rack" />
       {children}
     </>
   );
