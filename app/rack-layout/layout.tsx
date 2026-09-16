@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { RackOrderFix } from "./rack-order-fix";
+import { RackStockExportActions } from "@/app/rack-stock-export-actions";
 
 export const metadata: Metadata = {
   title: "Стеллажи",
@@ -48,6 +49,7 @@ export default function RackLayout({ children }: { children: ReactNode }) {
         }
       `}</style>
       <RackOrderFix />
+      <RackStockExportActions />
       {children}
     </>
   );
