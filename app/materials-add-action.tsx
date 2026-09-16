@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, Plus } from "lucide-react";
 
 export function MaterialsAddAction() {
   const pathname = usePathname();
@@ -22,22 +22,40 @@ export function MaterialsAddAction() {
 
   if (pathname !== "/materials") return null;
 
-  const button = (
-    <Link
-      href="/onec-materials"
-      className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-md shadow-orange-200/60 transition hover:bg-orange-600 active:scale-[.98]"
-      aria-label="Добавить материалы из 1С"
-    >
-      <Plus size={18} />
-      Добавить материалы
-    </Link>
+  const buttons = (
+    <>
+      <Link
+        href="/materials/excess"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center justify-center gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-2.5 text-sm font-bold text-orange-800 transition hover:bg-orange-100 active:scale-[.98]"
+      >
+        <AlertTriangle size={17} />
+        Излишки
+      </Link>
+      <a
+        href="/api/stock-export?scope=all"
+        className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100 active:scale-[.98]"
+      >
+        <FileSpreadsheet size={17} />
+        Выгрузить остатки
+      </a>
+      <Link
+        href="/onec-materials"
+        className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 text-sm font-bold text-white shadow-md shadow-orange-200/60 transition hover:bg-orange-600 active:scale-[.98]"
+        aria-label="Добавить материалы из 1С"
+      >
+        <Plus size={18} />
+        Добавить материалы
+      </Link>
+    </>
   );
 
-  if (target) return createPortal(button, target);
+  if (target) return createPortal(buttons, target);
 
   return (
-    <div className="fixed right-6 top-6 z-[120]">
-      {button}
+    <div className="fixed right-6 top-6 z-[120] flex flex-wrap items-center gap-2">
+      {buttons}
     </div>
   );
 }
