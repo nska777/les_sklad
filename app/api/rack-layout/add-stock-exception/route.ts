@@ -42,7 +42,7 @@ export async function POST(request: Request) {
         FROM onec_materials
         WHERE linked_product_id = ${productId}
         LIMIT 1
-      `).catch(() => ({ rows: [] })),
+      `),
     ]);
 
     const cell = rowsOf<{ id: string; code: string; blocked: boolean }>(cellResult)[0];
