@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { ExcessStockPanel } from "@/app/excess-stock-panel";
 import { RackOrderFix } from "./rack-order-fix";
+
+export const metadata: Metadata = {
+  title: "Стеллажи",
+};
 
 export default function RackLayout({ children }: { children: ReactNode }) {
   return (
