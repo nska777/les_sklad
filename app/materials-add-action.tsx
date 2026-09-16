@@ -18,6 +18,20 @@ function findMaterialsActionBar() {
   return children.length > 1 ? children[children.length - 1] : null;
 }
 
+function hideDuplicateUserCard(actionBar: HTMLElement | null) {
+  if (!actionBar) return;
+  const roleWords = ["Администратор", "Заведующий", "Кладовщик", "Просмотр"];
+  const children = Array.from(actionBar.children).filter((node): node is HTMLElement => node instanceof HTMLElement);
+  for (const child of children) {
+    if (child.matches("a,button")) continue;
+    const text = child.textContent || "";
+    if (roleWords.some((role) => text.includes(role))) {
+      child.dataset.materialsDuplicateUserCard = "true";
+      child.style.display = "none";
+    }
+  }
+}
+
 export function MaterialsAddAction() {
   const pathname = usePathname();
   const [target, setTarget] = useState<HTMLElement | null>(null);
@@ -28,7 +42,11 @@ export function MaterialsAddAction() {
       return;
     }
 
-    const resolve = () => setTarget(findMaterialsActionBar());
+    const resolve = () => {
+      const actionBar = findMaterialsActionBar();
+      hideDuplicateUserCard(actionBar);
+      setTarget(actionBar);
+    };
     resolve();
 
     const observer = new MutationObserver(resolve);
@@ -38,6 +56,10 @@ export function MaterialsAddAction() {
     return () => {
       observer.disconnect();
       window.clearTimeout(timer);
+      document.querySelectorAll<HTMLElement>('[data-materials-duplicate-user-card="true"]').forEach((node) => {
+        node.style.display = "";
+        delete node.dataset.materialsDuplicateUserCard;
+      });
     };
   }, [pathname]);
 
