@@ -7,9 +7,9 @@ import { Search } from "lucide-react";
 type ProductOption = { value: string; label: string };
 
 function findAddMaterialSection() {
-  const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'));
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')) as HTMLElement[];
   for (const dialog of dialogs) {
-    const heading = Array.from(dialog.querySelectorAll<HTMLElement>("h1,h2,h3")).find((node) =>
+    const heading = (Array.from(dialog.querySelectorAll("h1,h2,h3")) as HTMLElement[]).find((node) =>
       node.textContent?.includes("Добавить материал в эту ячейку"),
     );
     if (!heading) continue;
@@ -17,7 +17,7 @@ function findAddMaterialSection() {
     const section = heading.closest("section") as HTMLElement | null;
     if (!section) continue;
 
-    const select = section.querySelector<HTMLSelectElement>("select");
+    const select = section.querySelector("select") as HTMLSelectElement | null;
     if (!select) continue;
 
     const parent = select.parentElement;
