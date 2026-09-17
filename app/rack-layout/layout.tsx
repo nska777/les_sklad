@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { RackOrderFix } from "./rack-order-fix";
 import { RackProductSearchEnhancer } from "./product-search-enhancer";
+import { RackMoveDestinationEnhancer } from "./move-destination-enhancer";
 import { RackStockExportActions } from "@/app/rack-stock-export-actions";
 
 export const metadata: Metadata = {
@@ -51,6 +52,7 @@ export default function RackLayout({ children }: { children: ReactNode }) {
       `}</style>
       <RackOrderFix />
       <RackProductSearchEnhancer />
+      <RackMoveDestinationEnhancer />
       <RackStockExportActions />
       {children}
     </>
