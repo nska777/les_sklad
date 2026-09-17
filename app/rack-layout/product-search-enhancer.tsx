@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 
@@ -45,6 +45,7 @@ export function RackProductSearchEnhancer() {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState("");
+  const searchRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const resolve = () => {
@@ -56,6 +57,8 @@ export function RackProductSearchEnhancer() {
       }
 
       found.select.style.display = "none";
+      found.parent.style.gridColumn = "1 / -1";
+      found.parent.style.width = "100%";
       setTarget(found.parent);
       setSelect(found.select);
       setOptions(
@@ -79,6 +82,19 @@ export function RackProductSearchEnhancer() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const node = event.target as Node | null;
+      if (node && searchRef.current?.contains(node)) return;
+      setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [open]);
+
   if (!target || !select) return null;
 
   const normalized = query.trim().toLowerCase();
@@ -95,12 +111,13 @@ export function RackProductSearchEnhancer() {
   };
 
   return createPortal(
-    <div className="relative w-full">
+    <div ref={searchRef} className="relative w-full min-w-0">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
         <input
           value={query}
           onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}
           onChange={(event) => {
             setQuery(event.target.value);
             setOpen(true);
@@ -110,31 +127,35 @@ export function RackProductSearchEnhancer() {
               event.preventDefault();
               choose(filtered[0]);
             }
-            if (event.key === "Escape") setOpen(false);
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setOpen(false);
+            }
           }}
-          placeholder={selectedLabel || "Поиск материала по названию или RL-коду"}
-          className="h-10 w-full rounded-xl border border-black/10 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          placeholder={selectedLabel || "Поиск материала по названию, RL-коду или штрихкоду"}
+          className="h-12 w-full rounded-xl border border-black/10 bg-white pl-11 pr-4 text-base outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+          autoComplete="off"
         />
       </div>
 
       {selectedLabel && !query && (
-        <div className="mt-1.5 truncate text-xs font-medium text-slate-500">Выбрано: {selectedLabel}</div>
+        <div className="mt-2 truncate text-sm font-medium text-slate-500">Выбрано: {selectedLabel}</div>
       )}
 
       {open && (
-        <div className="absolute left-0 right-0 top-[46px] z-[220] max-h-72 overflow-y-auto rounded-xl border border-black/10 bg-white p-1.5 shadow-2xl">
+        <div className="absolute left-0 right-0 top-[54px] z-[260] max-h-80 overflow-y-auto rounded-xl border border-black/10 bg-white p-2 shadow-2xl">
           {filtered.length ? filtered.map((option) => (
             <button
               type="button"
               key={option.value}
-              onMouseDown={(event) => event.preventDefault()}
+              onPointerDown={(event) => event.stopPropagation()}
               onClick={() => choose(option)}
-              className="block w-full rounded-lg px-3 py-2.5 text-left text-sm hover:bg-blue-50"
+              className="block w-full rounded-lg px-4 py-3 text-left text-sm hover:bg-blue-50"
             >
               {option.label}
             </button>
           )) : (
-            <div className="px-3 py-4 text-center text-sm text-slate-500">Материал не найден</div>
+            <div className="px-4 py-5 text-center text-sm text-slate-500">Материал не найден</div>
           )}
         </div>
       )}
