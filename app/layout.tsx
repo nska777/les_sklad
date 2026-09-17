@@ -12,6 +12,7 @@ import { MaterialsAddAction } from "@/app/materials-add-action";
 import { IssueMobileScanTools, LiveIssueMonitor } from "@/app/issue-mobile-scan-tools";
 import { RackVisualAddCellHelper } from "@/app/rack-visual-add-cell-helper";
 import { PageTitleController } from "@/app/page-title-controller";
+import { HidePrimaryInventory } from "@/app/hide-primary-inventory";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -36,6 +37,7 @@ export default function RootLayout({
       <body className="antialiased">
         <PwaRegister />
         <PageTitleController />
+        <HidePrimaryInventory />
         <MovementDateMaintenance />
         <OnecCellOccupancyGuard />
         <AddStockExceptionHelper />
