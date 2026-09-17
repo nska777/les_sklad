@@ -10,24 +10,30 @@ export function HidePrimaryInventory() {
     if (pathname !== "/") return;
 
     const apply = () => {
-      const triggers = Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'));
-      const primary = triggers.find((node) => node.textContent?.includes("Первичный учёт"));
-      const receipt = triggers.find((node) => node.textContent?.includes("Приёмка"));
+      const headings = Array.from(document.querySelectorAll<HTMLElement>("h1,h2"));
+      const countHeading = headings.find((node) => node.textContent?.trim() === "Посчитайте то, что реально лежит");
+      const saveHeading = headings.find((node) => node.textContent?.trim() === "Сохраните начальный остаток");
 
-      if (primary) {
-        primary.style.display = "none";
-        primary.setAttribute("aria-hidden", "true");
+      const countCard = countHeading?.closest(".scan-console") as HTMLElement | null;
+      const saveCard = saveHeading?.closest(".panel") as HTMLElement | null;
+
+      if (countCard && saveCard) {
+        const countSection = countCard.closest("section") as HTMLElement | null;
+        const saveSection = saveCard.closest("section") as HTMLElement | null;
+
+        if (countSection && countSection === saveSection) {
+          countSection.style.display = "none";
+          return;
+        }
       }
 
-      const scanPanel = document.querySelector<HTMLElement>('[role="tabpanel"][data-state="active"]');
-      if (scanPanel && primary?.getAttribute("data-state") === "active" && receipt) {
-        receipt.click();
-      }
+      if (countCard) countCard.style.display = "none";
+      if (saveCard) saveCard.style.display = "none";
     };
 
     apply();
     const observer = new MutationObserver(apply);
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-state"] });
+    observer.observe(document.body, { subtree: true, childList: true });
 
     return () => observer.disconnect();
   }, [pathname]);
