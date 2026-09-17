@@ -6,25 +6,36 @@ import { Search } from "lucide-react";
 
 type ProductOption = { value: string; label: string };
 
-function findAddMaterialSection() {
-  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')) as HTMLElement[];
-  for (const dialog of dialogs) {
-    const heading = (Array.from(dialog.querySelectorAll("h1,h2,h3")) as HTMLElement[]).find((node) =>
-      node.textContent?.includes("Добавить материал в эту ячейку"),
+type SearchTarget = {
+  select: HTMLSelectElement | null;
+  parent: HTMLElement | null;
+};
+
+function findAddMaterialSection(): SearchTarget {
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+
+  for (const dialogNode of dialogs) {
+    if (!(dialogNode instanceof HTMLElement)) continue;
+
+    const headings = Array.from(dialogNode.querySelectorAll("h1,h2,h3"));
+    const heading = headings.find(
+      (node) => node instanceof HTMLElement && node.textContent?.includes("Добавить материал в эту ячейку"),
     );
-    if (!heading) continue;
+    if (!(heading instanceof HTMLElement)) continue;
 
-    const section = heading.closest("section") as HTMLElement | null;
-    if (!section) continue;
+    const section = heading.closest("section");
+    if (!(section instanceof HTMLElement)) continue;
 
-    const select = section.querySelector("select") as HTMLSelectElement | null;
-    if (!select) continue;
+    const selectNode = section.querySelector("select");
+    if (!(selectNode instanceof HTMLSelectElement)) continue;
 
-    const parent = select.parentElement;
-    return { section, select, parent };
+    const parent = selectNode.parentElement;
+    if (!(parent instanceof HTMLElement)) continue;
+
+    return { select: selectNode, parent };
   }
 
-  return { section: null as HTMLElement | null, select: null as HTMLSelectElement | null, parent: null as HTMLElement | null };
+  return { select: null, parent: null };
 }
 
 export function RackProductSearchEnhancer() {
