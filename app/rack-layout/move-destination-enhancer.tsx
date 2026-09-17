@@ -14,6 +14,7 @@ type Cell = {
   side: "front" | "back";
 };
 type RackData = { racks: Rack[]; cells: Cell[] };
+type RackApiPayload = { racks?: unknown; cells?: unknown };
 
 type MoveTarget = {
   parent: HTMLElement | null;
@@ -65,10 +66,14 @@ export function RackMoveDestinationEnhancer() {
   useEffect(() => {
     let active = true;
     fetch("/api/rack-layout", { cache: "no-store" })
-      .then((response) => response.json())
+      .then((response) => response.json() as Promise<unknown>)
       .then((result) => {
         if (!active) return;
-        setData({ racks: Array.isArray(result.racks) ? result.racks : [], cells: Array.isArray(result.cells) ? result.cells : [] });
+        const payload = result as RackApiPayload;
+        setData({
+          racks: Array.isArray(payload.racks) ? payload.racks as Rack[] : [],
+          cells: Array.isArray(payload.cells) ? payload.cells as Cell[] : [],
+        });
       })
       .catch(() => {});
     return () => { active = false; };
