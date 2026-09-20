@@ -7,7 +7,7 @@ export function HidePrimaryInventory() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (pathname !== "/") return;
+    if (pathname !== "/" && pathname !== "/warehouse") return;
 
     const apply = () => {
       const headings = Array.from(document.querySelectorAll<HTMLElement>("h1,h2"));
