@@ -17,8 +17,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Страница входа всегда доступна. Это позволяет сотруднику или администратору
+  // выбрать другое подразделение даже при уже существующей сессии.
   if (pathname === "/login") {
-    if (session) return NextResponse.redirect(new URL(warehouseHome(session.warehouse), request.url));
     return NextResponse.next();
   }
 
