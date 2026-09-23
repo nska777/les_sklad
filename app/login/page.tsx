@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Boxes, Layers3, Loader2, LockKeyhole, PaintBucket, TreePine, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ const departments: Array<{ code: WarehouseCode; name: string; icon: typeof Boxes
   { code: "ldsp", name: "Склад ЛДСП", icon: Layers3, note: "Листы и плитные материалы" },
 ];
 
-export default function LoginPage() {
+function LoginContent() {
   const params = useSearchParams();
   const initialWarehouse = params.get("warehouse") as WarehouseCode | null;
   const [warehouse, setWarehouse] = useState<WarehouseCode>(initialWarehouse && departments.some((item) => item.code === initialWarehouse) ? initialWarehouse : "hardware");
@@ -50,39 +50,21 @@ export default function LoginPage() {
             <div className="brand-mark"><TreePine size={22} /></div>
             <div><b>РУССКИЙ ЛЕС · RL СКЛАД</b><p className="text-xs text-[var(--muted-foreground)]">Доступ по подразделениям</p></div>
           </div>
-
-          <div className="mb-5">
-            <h1 className="text-2xl font-black tracking-tight sm:text-3xl">Выберите склад</h1>
-            <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">После входа сотрудник увидит только данные назначенного ему подразделения.</p>
-          </div>
-
+          <div className="mb-5"><h1 className="text-2xl font-black tracking-tight sm:text-3xl">Выберите склад</h1><p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">После входа сотрудник увидит только данные назначенного ему подразделения.</p></div>
           <div className="grid gap-3">
             {departments.map((department) => {
               const Icon = department.icon;
               const selected = warehouse === department.code;
-              return <button
-                key={department.code}
-                type="button"
-                onClick={() => { setWarehouse(department.code); setError(""); }}
-                className={`flex items-center gap-4 rounded-2xl border p-4 text-left transition ${selected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-black/10 bg-white/80 hover:-translate-y-0.5 hover:border-black/20 hover:shadow-md"}`}
-              >
+              return <button key={department.code} type="button" onClick={() => { setWarehouse(department.code); setError(""); }} className={`flex items-center gap-4 rounded-2xl border p-4 text-left transition ${selected ? "border-slate-900 bg-slate-950 text-white shadow-lg" : "border-black/10 bg-white/80 hover:-translate-y-0.5 hover:border-black/20 hover:shadow-md"}`}>
                 <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-white/12" : "bg-slate-100 text-slate-800"}`}><Icon size={21} /></span>
                 <span className="min-w-0"><span className="block font-extrabold">{department.name}</span><span className={`mt-0.5 block text-xs ${selected ? "text-white/65" : "text-slate-500"}`}>{department.note}</span></span>
               </button>;
             })}
           </div>
-
           <Link href="/departments" className="mt-6 inline-flex text-sm font-semibold text-slate-500 transition hover:text-slate-950">← Вернуться к подразделениям</Link>
         </div>
-
         <div className="p-6 sm:p-9 lg:p-10">
-          <div className="mb-7">
-            <LockKeyhole className="mb-4 text-orange-500" size={34} />
-            <div className="text-xs font-bold uppercase tracking-[.16em] text-slate-400">Авторизация</div>
-            <h2 className="mt-2 text-2xl font-black">{active.name}</h2>
-            <p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">Введите персональный логин и пароль. Все складские операции будут записываться от имени вошедшего сотрудника.</p>
-          </div>
-
+          <div className="mb-7"><LockKeyhole className="mb-4 text-orange-500" size={34} /><div className="text-xs font-bold uppercase tracking-[.16em] text-slate-400">Авторизация</div><h2 className="mt-2 text-2xl font-black">{active.name}</h2><p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">Введите персональный логин и пароль. Все складские операции будут записываться от имени вошедшего сотрудника.</p></div>
           <form onSubmit={submit} className="space-y-4">
             <div><Label htmlFor="username">Логин</Label><div className="relative mt-2"><UserRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><Input id="username" name="username" autoComplete="username" required autoFocus className="h-12 pl-10" placeholder={warehouse === "paint" ? "Например: mariana" : "Например: roman"} /></div></div>
             <div><Label htmlFor="password">Пароль</Label><Input id="password" name="password" type="password" autoComplete="current-password" required className="mt-2 h-12" placeholder="Введите пароль" /></div>
@@ -93,4 +75,8 @@ export default function LoginPage() {
       </section>
     </div>
   </main>;
+}
+
+export default function LoginPage() {
+  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={34} /></main>}><LoginContent /></Suspense>;
 }
