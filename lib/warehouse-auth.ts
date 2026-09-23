@@ -2,8 +2,27 @@ const DEFAULT_PASSWORD = "RL-7K4M-926P";
 const DEFAULT_SECRET = "russian-forest-warehouse-v05-2026";
 
 export type WarehouseRole = "admin" | "manager" | "storekeeper" | "viewer";
-export type WarehouseUser = { username: string; name: string; password: string; role: WarehouseRole };
-export type WarehouseSession = { username: string; name: string; role: WarehouseRole };
+export type WarehouseCode = "hardware" | "paint" | "ldsp";
+export type WarehouseUser = { username: string; name: string; password: string; role: WarehouseRole; warehouse?: WarehouseCode };
+export type WarehouseSession = { username: string; name: string; role: WarehouseRole; warehouse: WarehouseCode };
+
+export const warehouseDivisions: Array<{ code: WarehouseCode; name: string; short: string }> = [
+  { code: "hardware", name: "Склад фурнитуры", short: "Фурнитура" },
+  { code: "paint", name: "Склад краски", short: "Краска" },
+  { code: "ldsp", name: "Склад ЛДСП", short: "ЛДСП" },
+];
+
+export function isWarehouseCode(value: unknown): value is WarehouseCode {
+  return value === "hardware" || value === "paint" || value === "ldsp";
+}
+
+export function warehouseName(code: WarehouseCode) {
+  return warehouseDivisions.find((item) => item.code === code)?.name || code;
+}
+
+export function warehouseHome(code: WarehouseCode) {
+  return code === "hardware" ? "/warehouse" : `/department/${code}`;
+}
 
 export function accessPassword() {
   return process.env.APP_PASSWORD || DEFAULT_PASSWORD;
@@ -24,13 +43,16 @@ export function warehouseUsers(): WarehouseUser[] {
       // Неверный JSON не должен блокировать аварийный вход через APP_PASSWORD.
     }
   }
-  return [{ username: "admin", name: "Администратор", password: accessPassword(), role: "admin" }];
+  return [{ username: "admin", name: "Администратор", password: accessPassword(), role: "admin", warehouse: "hardware" }];
 }
 
-export function authenticateUser(username: string, password: string): WarehouseSession | null {
+export function authenticateUser(username: string, password: string, requestedWarehouse: WarehouseCode = "hardware"): WarehouseSession | null {
   const normalized = username.trim().toLowerCase();
   const user = warehouseUsers().find((item) => item.username.toLowerCase() === normalized && item.password === password);
-  return user ? { username: user.username, name: user.name, role: user.role } : null;
+  if (!user) return null;
+  const assigned = isWarehouseCode(user.warehouse) ? user.warehouse : "hardware";
+  if (user.role !== "admin" && assigned !== requestedWarehouse) return null;
+  return { username: user.username, name: user.name, role: user.role, warehouse: user.role === "admin" ? requestedWarehouse : assigned };
 }
 
 function bytesToHex(bytes: Uint8Array) {
@@ -56,9 +78,10 @@ function decodePayload(value: string): WarehouseSession | null {
     const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
     const binary = atob(padded);
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as WarehouseSession;
-    if (!parsed.username || !parsed.name || !["admin", "manager", "storekeeper", "viewer"].includes(parsed.role)) return null;
-    return parsed;
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as Partial<WarehouseSession>;
+    if (!parsed.username || !parsed.name || !["admin", "manager", "storekeeper", "viewer"].includes(String(parsed.role))) return null;
+    const warehouse = isWarehouseCode(parsed.warehouse) ? parsed.warehouse : "hardware";
+    return { username: parsed.username, name: parsed.name, role: parsed.role as WarehouseRole, warehouse };
   } catch { return null; }
 }
 
@@ -76,7 +99,7 @@ export async function verifySessionToken(token?: string | null): Promise<Warehou
 
 // Совместимость для старых импортов. Новые маршруты используют createSessionToken/verifySessionToken.
 export async function sessionToken() {
-  return createSessionToken({ username: "admin", name: "Администратор", role: "admin" });
+  return createSessionToken({ username: "admin", name: "Администратор", role: "admin", warehouse: "hardware" });
 }
 
 export function canWrite(role: WarehouseRole) {
