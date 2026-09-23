@@ -123,6 +123,64 @@ export const warehouseUsers = pgTable("warehouse_users", {
   passwordHash: text("password_hash").notNull(),
   passwordSalt: text("password_salt").notNull(),
   role: text("role").notNull().default("storekeeper"),
+  warehouseCode: text("warehouse_code").notNull().default("hardware"),
   active: boolean("active").notNull().default(true),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [index("idx_warehouse_users_role_active").on(table.role, table.active)]);
+}, (table) => [index("idx_warehouse_users_role_active").on(table.role, table.active), index("idx_warehouse_users_warehouse").on(table.warehouseCode)]);
+
+export const departmentRacks = pgTable("department_racks", {
+  id: text("id").primaryKey(),
+  warehouseCode: text("warehouse_code").notNull(),
+  name: text("name").notNull(),
+  code: text("code").notNull(),
+  rows: integer("rows").notNull(),
+  columns: integer("columns").notNull(),
+  archived: boolean("archived").notNull().default(false),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_department_racks_warehouse").on(table.warehouseCode, table.archived)]);
+
+export const departmentCells = pgTable("department_cells", {
+  id: text("id").primaryKey(),
+  warehouseCode: text("warehouse_code").notNull(),
+  rackId: text("rack_id").notNull().references(() => departmentRacks.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),
+  label: text("label").notNull(),
+  rowIndex: integer("row_index").notNull(),
+  columnIndex: integer("column_index").notNull(),
+  blocked: boolean("blocked").notNull().default(false),
+}, (table) => [index("idx_department_cells_warehouse_rack").on(table.warehouseCode, table.rackId)]);
+
+export const departmentProducts = pgTable("department_products", {
+  id: text("id").primaryKey(),
+  warehouseCode: text("warehouse_code").notNull(),
+  name: text("name").notNull(),
+  sku: text("sku").notNull(),
+  barcode: text("barcode").notNull().default(""),
+  category: text("category").notNull().default("Материалы"),
+  unit: text("unit").notNull().default("шт."),
+  minStock: doublePrecision("min_stock").notNull().default(0),
+  oneCId: text("one_c_id"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_department_products_warehouse").on(table.warehouseCode, table.name)]);
+
+export const departmentStocks = pgTable("department_stocks", {
+  warehouseCode: text("warehouse_code").notNull(),
+  productId: text("product_id").notNull().references(() => departmentProducts.id, { onDelete: "cascade" }),
+  cellId: text("cell_id").notNull().references(() => departmentCells.id, { onDelete: "cascade" }),
+  quantity: doublePrecision("quantity").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [primaryKey({ columns: [table.warehouseCode, table.productId, table.cellId] }), index("idx_department_stocks_warehouse").on(table.warehouseCode)]);
+
+export const departmentMovements = pgTable("department_movements", {
+  id: text("id").primaryKey(),
+  warehouseCode: text("warehouse_code").notNull(),
+  type: text("type").notNull(),
+  productId: text("product_id").notNull().references(() => departmentProducts.id),
+  fromCellId: text("from_cell_id").references(() => departmentCells.id),
+  toCellId: text("to_cell_id").references(() => departmentCells.id),
+  quantity: doublePrecision("quantity").notNull(),
+  recipient: text("recipient").notNull().default(""),
+  comment: text("comment").notNull().default(""),
+  operator: text("operator").notNull().default("Кладовщик"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_department_movements_warehouse_created").on(table.warehouseCode, table.createdAt)]);
