@@ -29,8 +29,24 @@ const schemaSql = [
   `CREATE INDEX IF NOT EXISTS idx_movements_document_id ON movements(document_id)`,
   `CREATE TABLE IF NOT EXISTS activity_logs (id text PRIMARY KEY, action text NOT NULL, entity_type text NOT NULL, entity_id text NOT NULL, entity_name text NOT NULL, details text NOT NULL DEFAULT '', operator text NOT NULL DEFAULT 'Кладовщик', created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at ON activity_logs(created_at)`,
-  `CREATE TABLE IF NOT EXISTS warehouse_users (id text PRIMARY KEY, username text NOT NULL UNIQUE, name text NOT NULL, password_hash text NOT NULL, password_salt text NOT NULL, role text NOT NULL DEFAULT 'storekeeper', active boolean NOT NULL DEFAULT true, created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS warehouse_users (id text PRIMARY KEY, username text NOT NULL UNIQUE, name text NOT NULL, password_hash text NOT NULL, password_salt text NOT NULL, role text NOT NULL DEFAULT 'storekeeper', warehouse_code text NOT NULL DEFAULT 'hardware', active boolean NOT NULL DEFAULT true, created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `ALTER TABLE warehouse_users ADD COLUMN IF NOT EXISTS warehouse_code text NOT NULL DEFAULT 'hardware'`,
   `CREATE INDEX IF NOT EXISTS idx_warehouse_users_role_active ON warehouse_users(role, active)`,
+  `CREATE INDEX IF NOT EXISTS idx_warehouse_users_warehouse ON warehouse_users(warehouse_code)`,
+
+  `CREATE TABLE IF NOT EXISTS department_racks (id text PRIMARY KEY, warehouse_code text NOT NULL, name text NOT NULL, code text NOT NULL, rows integer NOT NULL, columns integer NOT NULL, archived boolean NOT NULL DEFAULT false, created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_department_racks_warehouse ON department_racks(warehouse_code, archived)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_department_racks_code_unique ON department_racks(warehouse_code, code)`,
+  `CREATE TABLE IF NOT EXISTS department_cells (id text PRIMARY KEY, warehouse_code text NOT NULL, rack_id text NOT NULL REFERENCES department_racks(id) ON DELETE CASCADE, code text NOT NULL, label text NOT NULL, row_index integer NOT NULL, column_index integer NOT NULL, blocked boolean NOT NULL DEFAULT false)`,
+  `CREATE INDEX IF NOT EXISTS idx_department_cells_warehouse_rack ON department_cells(warehouse_code, rack_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_department_cells_code_unique ON department_cells(warehouse_code, code)`,
+  `CREATE TABLE IF NOT EXISTS department_products (id text PRIMARY KEY, warehouse_code text NOT NULL, name text NOT NULL, sku text NOT NULL, barcode text NOT NULL DEFAULT '', category text NOT NULL DEFAULT 'Материалы', unit text NOT NULL DEFAULT 'шт.', min_stock double precision NOT NULL DEFAULT 0, one_c_id text, created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_department_products_warehouse ON department_products(warehouse_code, name)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_department_products_sku_unique ON department_products(warehouse_code, sku)`,
+  `CREATE TABLE IF NOT EXISTS department_stocks (warehouse_code text NOT NULL, product_id text NOT NULL REFERENCES department_products(id) ON DELETE CASCADE, cell_id text NOT NULL REFERENCES department_cells(id) ON DELETE CASCADE, quantity double precision NOT NULL DEFAULT 0, updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(warehouse_code, product_id, cell_id))`,
+  `CREATE INDEX IF NOT EXISTS idx_department_stocks_warehouse ON department_stocks(warehouse_code)`,
+  `CREATE TABLE IF NOT EXISTS department_movements (id text PRIMARY KEY, warehouse_code text NOT NULL, type text NOT NULL, product_id text NOT NULL REFERENCES department_products(id), from_cell_id text REFERENCES department_cells(id), to_cell_id text REFERENCES department_cells(id), quantity double precision NOT NULL, recipient text NOT NULL DEFAULT '', comment text NOT NULL DEFAULT '', operator text NOT NULL DEFAULT 'Кладовщик', created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_department_movements_warehouse_created ON department_movements(warehouse_code, created_at)`,
 ];
 
 async function ensureSchema(run: (statement: string) => Promise<unknown>) {

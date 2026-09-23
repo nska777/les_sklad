@@ -9,7 +9,7 @@ import { MovementDateMaintenance } from "@/app/movement-date-maintenance";
 import { OnecCellOccupancyGuard } from "@/app/onec-cell-occupancy-guard";
 import { AddStockExceptionHelper } from "@/app/add-stock-exception-helper";
 import { MaterialsAddAction } from "@/app/materials-add-action";
-import { IssueMobileScanTools, LiveIssueMonitor } from "@/app/issue-mobile-scan-tools";
+import { IssueMobileScanTools } from "@/app/issue-mobile-scan-tools";
 import { RackVisualAddCellHelper } from "@/app/rack-visual-add-cell-helper";
 import { PageTitleController } from "@/app/page-title-controller";
 import { HidePrimaryInventory } from "@/app/hide-primary-inventory";
@@ -46,7 +46,6 @@ export default function RootLayout({
         {children}
         <MaterialsAddAction />
         <IssueMobileScanTools />
-        <LiveIssueMonitor />
         <RackVisualAddCellHelper />
         <SessionMenu />
         <CodeZoom />
