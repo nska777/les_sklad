@@ -50,7 +50,7 @@ function LoginContent() {
             <div className="brand-mark"><TreePine size={22} /></div>
             <div><b>РУССКИЙ ЛЕС · RL СКЛАД</b><p className="text-xs text-[var(--muted-foreground)]">Доступ по подразделениям</p></div>
           </div>
-          <div className="mb-5"><h1 className="text-2xl font-black tracking-tight sm:text-3xl">Выберите склад</h1><p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">После входа сотрудник увидит только данные назначенного ему подразделения.</p></div>
+          <div className="mb-5"><h1 className="text-2xl font-black tracking-tight sm:text-3xl">Выберите склад</h1></div>
           <div className="grid gap-3">
             {departments.map((department) => {
               const Icon = department.icon;
@@ -64,7 +64,7 @@ function LoginContent() {
           <Link href="/departments" className="mt-6 inline-flex text-sm font-semibold text-slate-500 transition hover:text-slate-950">← Вернуться к подразделениям</Link>
         </div>
         <div className="p-6 sm:p-9 lg:p-10">
-          <div className="mb-7"><LockKeyhole className="mb-4 text-orange-500" size={34} /><div className="text-xs font-bold uppercase tracking-[.16em] text-slate-400">Авторизация</div><h2 className="mt-2 text-2xl font-black">{active.name}</h2><p className="mt-2 text-sm leading-6 text-[var(--muted-foreground)]">Введите персональный логин и пароль. Все складские операции будут записываться от имени вошедшего сотрудника.</p></div>
+          <div className="mb-7"><LockKeyhole className="mb-4 text-orange-500" size={34} /><div className="text-xs font-bold uppercase tracking-[.16em] text-slate-400">Авторизация</div><h2 className="mt-2 text-2xl font-black">{active.name}</h2></div>
           <form onSubmit={submit} className="space-y-4">
             <div><Label htmlFor="username">Логин</Label><div className="relative mt-2"><UserRound className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} /><Input id="username" name="username" autoComplete="username" required autoFocus className="h-12 pl-10" placeholder={warehouse === "paint" ? "Например: mariana" : "Например: roman"} /></div></div>
             <div><Label htmlFor="password">Пароль</Label><Input id="password" name="password" type="password" autoComplete="current-password" required className="mt-2 h-12" placeholder="Введите пароль" /></div>
