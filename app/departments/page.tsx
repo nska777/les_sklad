@@ -45,7 +45,6 @@ export default function DepartmentsPage() {
         <section className="mb-8 max-w-3xl sm:mb-10">
           <span className="inline-flex rounded-full border border-black/10 bg-white/75 px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm backdrop-blur">Единая складская система</span>
           <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-5xl">Какой склад открыть?</h1>
-          <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">Каждое подразделение работает отдельно: свои сотрудники, материалы, стеллажи, ячейки, приходы, перемещения и выдачи.</p>
         </section>
 
         <div className="grid gap-4 md:grid-cols-3">
@@ -71,10 +70,6 @@ export default function DepartmentsPage() {
               </Link>
             );
           })}
-        </div>
-
-        <div className="mt-8 rounded-2xl border border-white/80 bg-white/60 p-4 text-xs leading-5 text-slate-500 shadow-sm backdrop-blur sm:mt-10 sm:p-5">
-          Доступ разделён по сотрудникам. Пользователь склада краски не видит данные склада фурнитуры или ЛДСП. Администратор может входить в нужное подразделение отдельно.
         </div>
       </div>
     </main>

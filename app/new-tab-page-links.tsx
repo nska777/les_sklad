@@ -23,6 +23,10 @@ function normalizePath(href: string) {
 export function NewTabPageLinks() {
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
+      // Подразделения (краска/ЛДСП) имеют собственную навигацию и никогда
+      // не должны открывать маршруты основного склада фурнитуры.
+      if (window.location.pathname.startsWith("/department/")) return;
+
       if (event.defaultPrevented || event.button !== 0) return;
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
