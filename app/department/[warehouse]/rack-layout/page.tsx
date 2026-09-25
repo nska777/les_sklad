@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Box, Layers3, Loader2, MapPin, PackagePlus, Plus, QrCode, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Layers3, Loader2, MapPin, PackagePlus, Plus, QrCode, RotateCcw, RotateCw, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,19 @@ type Product = { id: string; name: string; sku: string; barcode: string; unit: s
 type Stock = { productId: string; cellId: string; quantity: number };
 type Snapshot = { warehouse: { code: string; name: string }; racks: Rack[]; cells: Cell[]; products: Product[]; stocks: Stock[]; error?: string };
 const fmt = (v: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(v);
+
+function displayPosition(rack: Rack, racks: Rack[]) {
+  const explicit = Math.abs(Number(rack.posX || 0)) > 0.01 || Math.abs(Number(rack.posZ || 0)) > 0.01;
+  if (explicit) return { x: Number(rack.posX || 0), z: Number(rack.posZ || 0) };
+  const sameType = racks.filter((r) => (r.storageType === "floor") === (rack.storageType === "floor"));
+  const index = Math.max(0, sameType.findIndex((r) => r.id === rack.id));
+  if (rack.storageType === "floor") {
+    const col = index % 4; const row = Math.floor(index / 4);
+    return { x: -8 + col * 5.2, z: 7 + row * 4.5 };
+  }
+  const col = index % 3; const row = Math.floor(index / 3);
+  return { x: -8 + col * 8, z: -5 + row * 6.5 };
+}
 
 export default function PaintStorageRoomPage() {
   const params = useParams<{ warehouse: string }>();
@@ -36,9 +49,7 @@ export default function PaintStorageRoomPage() {
       setData(body);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Ошибка загрузки");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -54,9 +65,7 @@ export default function PaintStorageRoomPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Ошибка");
       throw error;
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const onCellClick = useCallback((cell: Cell) => setSelected(cell), []);
@@ -65,6 +74,8 @@ export default function PaintStorageRoomPage() {
     const product = data.products.find((x) => x.id === s.productId);
     return { ...s, productName: product?.name || "Материал", unit: product?.unit || "", color: product?.color || "", packType: product?.packType || "", packSize: Number(product?.packSize || 0) };
   }), [data.stocks, data.products]);
+
+  const selectedRack = selected ? data.racks.find((r) => r.id === selected.rackId) || null : null;
 
   const submitStorage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -77,29 +88,23 @@ export default function PaintStorageRoomPage() {
     event.preventDefault();
     if (!selected) return;
     const form = new FormData(event.currentTarget);
-    await post({
-      action: "receive",
-      cellId: selected.id,
-      productId: form.get("productId"),
-      quantity: form.get("quantity"),
-      documentNumber: "3D-РАЗМЕЩЕНИЕ",
-      sourceName: "Внутреннее размещение",
-      sourceLocation: "Склад краски",
-      comment: "Размещение через 3D-склад",
-    }, "Материал размещён");
+    await post({ action: "receive", cellId: selected.id, productId: form.get("productId"), quantity: form.get("quantity"), documentNumber: "3D-РАЗМЕЩЕНИЕ", sourceName: "Внутреннее размещение", sourceLocation: "Склад краски", comment: "Размещение через 3D-склад" }, "Материал размещён");
     event.currentTarget.reset();
   };
 
+  const moveStorage = async (dx = 0, dz = 0, dr = 0) => {
+    if (!selectedRack) return;
+    const pos = displayPosition(selectedRack, data.racks);
+    await post({ action: "updateRack", id: selectedRack.id, posX: pos.x + dx, posZ: pos.z + dz, rotation: Number(selectedRack.rotation || 0) + dr }, "Положение сохранено");
+  };
+
   const deleteStorage = async () => {
-    if (!selected) return;
-    const rack = data.racks.find((r) => r.id === selected.rackId);
-    if (!rack || !window.confirm(`Удалить ${rack.storageType === "floor" ? "напольную зону" : "стеллаж"} ${rack.code}?`)) return;
-    await post({ action: "deleteRack", id: rack.id }, "Место хранения удалено");
+    if (!selectedRack || !window.confirm(`Удалить ${selectedRack.storageType === "floor" ? "напольную зону" : "стеллаж"} ${selectedRack.code}?`)) return;
+    await post({ action: "deleteRack", id: selectedRack.id }, "Место хранения удалено");
     setSelected(null);
   };
 
   if (loading) return <main className="flex min-h-screen items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={36} /></main>;
-  const selectedRack = selected ? data.racks.find((r) => r.id === selected.rackId) : null;
 
   return <main className="min-h-screen px-3 py-4 text-[var(--foreground)] sm:px-5 lg:px-7">
     <div className="mx-auto max-w-[1800px] space-y-4">
@@ -108,7 +113,7 @@ export default function PaintStorageRoomPage() {
           <Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16} /> Назад</Link>
           <p className="eyebrow">Склад краски · 3D-комната</p>
           <h1 className="page-title">Склад</h1>
-          <p className="page-description">Стеллажи, ячейки и напольные зоны в одной 3D-комнате. Банки и ведра показываются прямо в месте хранения.</p>
+          <p className="page-description">Стеллажи, ячейки и напольные зоны в одной 3D-комнате. Выберите объект, чтобы переместить или повернуть его.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setMode("rack")} className="accent-button"><Plus /> Стеллаж</Button>
@@ -117,13 +122,34 @@ export default function PaintStorageRoomPage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <DepartmentRoomThreeView racks={data.racks} cells={data.cells} stocks={richStocks} selectedCellId={selected?.id} onCellClick={onCellClick} />
+        <DepartmentRoomThreeView racks={data.racks} cells={data.cells} stocks={richStocks} selectedCellId={selected?.id} selectedRackId={selectedRack?.id} onCellClick={onCellClick} />
         <aside className="panel h-fit p-5 xl:sticky xl:top-4">
           {selected ? <>
             <div className="flex items-start justify-between gap-3">
               <div><p className="eyebrow">{selectedRack?.storageType === "floor" ? "Напольное хранение" : "Ячейка"}</p><h2 className="mt-1 text-2xl font-black">{selected.code}</h2><p className="mt-1 text-sm text-slate-500">{selectedRack?.name}</p></div>
               <div className="rounded-xl bg-slate-950 p-2.5 text-white"><QrCode size={20} /></div>
             </div>
+
+            {selectedRack && <section className="mt-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
+              <div className="font-black">Выбран объект: {selectedRack.code}</div>
+              <div className="mt-1 text-xs text-slate-500">Передвигайте стеллаж или напольную зону кнопками. Изменение сразу сохраняется.</div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <div />
+                <Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0, -1, 0)} disabled={saving}><ArrowUp size={15}/></Button>
+                <div />
+                <Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(-1, 0, 0)} disabled={saving}><ArrowLeft size={15}/></Button>
+                <div className="flex items-center justify-center text-[10px] font-bold text-slate-400">1 м</div>
+                <Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(1, 0, 0)} disabled={saving}><ArrowRight size={15}/></Button>
+                <div />
+                <Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0, 1, 0)} disabled={saving}><ArrowDown size={15}/></Button>
+                <div />
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0, 0, -Math.PI / 12)} disabled={saving}><RotateCcw size={15}/> -15°</Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0, 0, Math.PI / 12)} disabled={saving}><RotateCw size={15}/> +15°</Button>
+              </div>
+            </section>}
+
             <div className="mt-4 flex justify-center rounded-2xl border bg-white p-4"><QRCodeSVG value={`RL-CELL:${data.warehouse.code}:${selected.code}`} size={170} /></div>
             <div className="mt-2 text-center text-xs font-mono text-slate-400">RL-CELL:{data.warehouse.code}:{selected.code}</div>
             <div className="mt-5 space-y-2">
@@ -139,8 +165,8 @@ export default function PaintStorageRoomPage() {
               <div><Label>Количество</Label><Input name="quantity" required type="number" step="0.001" min="0.001" className="mt-1.5" /></div>
               <Button disabled={saving} className="accent-button w-full"><PackagePlus /> Разместить</Button>
             </form>
-            <Button variant="outline" className="mt-3 w-full text-red-600" onClick={() => void deleteStorage()} disabled={selectedStocks.length > 0}><Trash2 /> Удалить место хранения</Button>
-          </> : <div className="py-12 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Box size={22} /></div><h3 className="mt-4 font-black">Выберите место</h3><p className="mt-2 text-sm leading-6 text-slate-500">Нажмите на ячейку стеллажа или напольную зону. Здесь появятся QR, остаток и размещение товара.</p></div>}
+            <Button variant="outline" className="mt-3 w-full text-red-600" onClick={() => void deleteStorage()} disabled={selectedStocks.length > 0 || saving}><Trash2 /> Удалить место хранения</Button>
+          </> : <div className="py-12 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Box size={22} /></div><h3 className="mt-4 font-black">Выберите место</h3><p className="mt-2 text-sm leading-6 text-slate-500">Нажмите на ячейку стеллажа или напольную зону. Объект подсветится, после чего его можно двигать и поворачивать.</p></div>}
         </aside>
       </div>
 

@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import {
   ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Boxes, ClipboardList, FileSpreadsheet,
   History, Layers3, Loader2, MapPin, PackagePlus, PaintBucket, Plus, RefreshCw, Search,
-  ShieldAlert, Trash2, TreePine,
+  ShieldAlert, Trash2, TreePine, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -40,6 +40,7 @@ export default function WarehouseFullUi() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [oneCOpen, setOneCOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -70,7 +71,6 @@ export default function WarehouseFullUi() {
     data.stocks.forEach((s) => map.set(s.productId, (map.get(s.productId) || 0) + Number(s.quantity)));
     return map;
   }, [data.stocks]);
-  const productById = useMemo(() => new Map(data.products.map((p) => [p.id, p])), [data.products]);
   const cellById = useMemo(() => new Map(data.cells.map((c) => [c.id, c])), [data.cells]);
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -83,18 +83,21 @@ export default function WarehouseFullUi() {
 
   if (loading) return <main className="flex min-h-screen items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={36} /></main>;
 
+  const importFromOneC = async (items: Array<Record<string, unknown>>) => {
+    const result = await post({ action: "bulkImportProducts", items });
+    toast.success(`1С: добавлено ${Number(result.created || 0)}, обновлено ${Number(result.updated || 0)}`);
+  };
+
   return <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,.98),rgba(244,246,241,.92)_42%,rgba(236,239,232,.98)_100%)] text-[var(--foreground)]">
     <header className="app-header sticky top-0 z-30"><div className="mx-auto flex min-h-17 max-w-[1600px] items-center justify-between gap-3 px-4 py-3 sm:px-7">
       <div className="flex items-center gap-3"><div className="brand-mark"><TreePine size={22}/></div><div><b>РУССКИЙ ЛЕС · RL СКЛАД</b><div className="flex items-center gap-1.5 text-xs text-slate-500"><PaintBucket size={13}/> {data.warehouse.name}</div></div></div>
-      <Button variant="outline" size="sm" onClick={() => void loadData()}><RefreshCw size={15}/> Обновить</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => setOneCOpen(true)}><FileSpreadsheet size={15}/> Материалы из 1С</Button>
+        <Button variant="outline" size="sm" onClick={() => void loadData()}><RefreshCw size={15}/> Обновить</Button>
+      </div>
     </div></header>
 
     <div className="mx-auto max-w-[1600px] space-y-5 px-4 py-5 sm:px-7 sm:py-7">
-      <OneCMaterials saving={saving} onImport={async (items) => {
-        const result = await post({ action: "bulkImportProducts", items });
-        toast.success(`1С: добавлено ${Number(result.created || 0)}, обновлено ${Number(result.updated || 0)}`);
-      }}/>
-
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Материалов" value={data.products.length} icon={Boxes}/>
         <Metric label="Общий учётный остаток" value={fmt(total)} icon={PackagePlus}/>
@@ -152,6 +155,13 @@ export default function WarehouseFullUi() {
         <TabsContent value="history"><Movements rows={data.movements}/></TabsContent>
       </Tabs>
     </div>
+
+    {oneCOpen && <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) setOneCOpen(false); }}>
+      <section className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl sm:p-7">
+        <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.16em] text-orange-600"><FileSpreadsheet size={16}/> 1С</div><h2 className="mt-2 text-2xl font-black">Материалы из 1С</h2><p className="mt-2 text-sm text-slate-500">Загрузите номенклатуру. Артикул при отсутствии и штрихкод создаются автоматически.</p></div><Button type="button" variant="outline" size="icon" onClick={() => setOneCOpen(false)} disabled={saving}><X size={18}/></Button></div>
+        <div className="mt-5"><OneCMaterials saving={saving} onImport={importFromOneC}/></div>
+      </section>
+    </div>}
   </main>;
 }
 
@@ -172,7 +182,9 @@ function OneCMaterials({ saving, onImport }: { saving: boolean; onImport: (items
     if (!items.length) return toast.error("Не найден столбец Наименование/Материал");
     await onImport(items);
   };
-  return <section className="panel overflow-hidden p-0"><div className="grid gap-4 bg-slate-950 p-5 text-white lg:grid-cols-[1fr_auto] lg:items-center"><div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.16em] text-orange-300"><FileSpreadsheet size={16}/> Материалы из 1С</div><h2 className="mt-2 text-xl font-black">Номенклатура 1С — верхний источник материалов</h2><p className="mt-1 text-sm text-slate-300">При загрузке автоматически создаются артикул при отсутствии, штрихкод и карточка материала. QR формируется уже для места хранения.</p></div><label className="cursor-pointer rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-950 hover:bg-orange-50">{saving ? "Загрузка..." : name || "Загрузить Excel / CSV"}<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={saving} onChange={(e) => { const f = e.target.files?.[0]; if (f) void parse(f); }}/></label></div></section>;
+  return <div className="rounded-2xl border border-dashed border-orange-300 bg-orange-50/60 p-5">
+    <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><b>Номенклатура 1С</b><p className="mt-1 text-xs leading-5 text-slate-500">XLSX / XLS / CSV. Распознаются наименование, артикул, ID 1С, цвет, RAL, единица, тара и минимальный остаток.</p></div><label className="cursor-pointer rounded-xl bg-slate-950 px-5 py-3 text-center text-sm font-bold text-white hover:bg-slate-800">{saving ? "Загрузка..." : name || "Выбрать файл"}<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={saving} onChange={(e) => { const f = e.target.files?.[0]; if (f) void parse(f); }}/></label></div>
+  </div>;
 }
 
 function CreateProduct({ saving, onCreate }: { saving: boolean; onCreate: (payload: Record<string, unknown>) => Promise<unknown> }) {
