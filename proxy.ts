@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canAccessWarehouse, isWarehouseCode, verifySessionToken, warehouseHome } from "@/lib/warehouse-auth";
+import { canAccessWarehouse, createSessionToken, isWarehouseCode, verifySessionToken, warehouseHome } from "@/lib/warehouse-auth";
 
 const authApi = ["/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/auth/switch-warehouse"];
 
@@ -33,12 +33,34 @@ export async function proxy(request: NextRequest) {
     const requested = pathname.split("/")[2];
     if (isWarehouseCode(requested)) {
       if (!canAccessWarehouse(session, requested)) return NextResponse.redirect(new URL(warehouseHome(session.warehouse), request.url));
-      if (requested !== session.warehouse) return NextResponse.redirect(new URL(`/api/auth/switch-warehouse?warehouse=${requested}`, request.url));
+      if (requested !== session.warehouse) {
+        const nextSession = { ...session, warehouse: requested };
+        const response = NextResponse.redirect(request.url);
+        response.cookies.set("warehouse_session", await createSessionToken(nextSession), {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: 60 * 60 * 24 * 30,
+          path: "/",
+        });
+        return response;
+      }
     }
   }
 
   if (pathname === "/warehouse" && session.warehouse !== "hardware") {
-    if (canAccessWarehouse(session, "hardware")) return NextResponse.redirect(new URL("/departments", request.url));
+    if (canAccessWarehouse(session, "hardware")) {
+      const nextSession = { ...session, warehouse: "hardware" as const };
+      const response = NextResponse.redirect(request.url);
+      response.cookies.set("warehouse_session", await createSessionToken(nextSession), {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 30,
+        path: "/",
+      });
+      return response;
+    }
     return NextResponse.redirect(new URL(warehouseHome(session.warehouse), request.url));
   }
 
