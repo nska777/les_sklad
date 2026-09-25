@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 type Rack = { id: string; name: string; code: string; rows: number; columns: number };
-type Cell = { id: string; rackId: string; code: string; label: string; rowIndex: number; columnIndex: number; blocked: boolean };
+type Cell = { id: string; warehouseCode: string; rackId: string; code: string; label: string; rowIndex: number; columnIndex: number; blocked: boolean };
 type Stock = { productId: string; cellId: string; quantity: number; productName: string; unit: string };
 
 type Props = {
@@ -121,9 +121,7 @@ export function DepartmentRackThreeView({ rack, cells, stocks, highlightCellId, 
       addBox(0.18, height, 0.18, x, height / 2, -depth / 2, steel);
       addBox(0.18, height, 0.18, x, height / 2, depth / 2, steel);
     }
-    for (let row = 0; row < rack.rows; row += 1) {
-      addBox(width + 0.22, 0.12, depth, 0, (row + 1) * rowHeight, 0, shelfMat);
-    }
+    for (let row = 0; row < rack.rows; row += 1) addBox(width + 0.22, 0.12, depth, 0, (row + 1) * rowHeight, 0, shelfMat);
 
     const interactive: THREE.Object3D[] = [];
     const cellByObject = new Map<string, Cell>();
@@ -154,7 +152,6 @@ export function DepartmentRackThreeView({ rack, cells, stocks, highlightCellId, 
         if (highlighted) highlightedMaterial = material;
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.34, cellWidth - 0.18), rowHeight - 0.2, highlighted ? 0.25 : 0.16), material);
         mesh.position.set(x, y, z);
-        mesh.userData.cellId = cell.id;
         rackGroup.add(mesh);
         interactive.push(mesh);
         cellByObject.set(mesh.uuid, cell);
@@ -167,11 +164,7 @@ export function DepartmentRackThreeView({ rack, cells, stocks, highlightCellId, 
 
         const total = cellStocks.reduce((sum, stock) => sum + Number(stock.quantity), 0);
         const first = cellStocks[0];
-        const labelText = blocked
-          ? `${cell.code}\nЗАБЛОКИРОВАНА`
-          : occupied
-            ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}`
-            : `${cell.code}\nСвободно`;
+        const labelText = blocked ? `${cell.code}\nЗАБЛОКИРОВАНА` : occupied ? `${cell.code}\n${first?.productName || "Материал"}\n${total.toLocaleString("ru-RU", { maximumFractionDigits: 3 })} ${first?.unit || ""}` : `${cell.code}\nСвободно`;
         const label = labelSprite(labelText, highlighted || occupied, Math.max(0.62, Math.min(1.8, cellWidth / 2.35)));
         label.position.set(x, y, depth / 2 + 0.27);
         rackGroup.add(label);
@@ -192,11 +185,7 @@ export function DepartmentRackThreeView({ rack, cells, stocks, highlightCellId, 
     const pointer = new THREE.Vector2();
     let downX = 0;
     let downY = 0;
-    const onDown = (event: PointerEvent) => {
-      downX = event.clientX;
-      downY = event.clientY;
-      renderer.domElement.style.cursor = "grabbing";
-    };
+    const onDown = (event: PointerEvent) => { downX = event.clientX; downY = event.clientY; renderer.domElement.style.cursor = "grabbing"; };
     const onUp = (event: PointerEvent) => {
       renderer.domElement.style.cursor = "grab";
       if (Math.hypot(event.clientX - downX, event.clientY - downY) > 7) return;
@@ -248,10 +237,7 @@ export function DepartmentRackThreeView({ rack, cells, stocks, highlightCellId, 
           if (Array.isArray(object.material)) object.material.forEach((item) => item.dispose());
           else object.material.dispose();
         }
-        if (object instanceof THREE.Sprite) {
-          object.material.map?.dispose();
-          object.material.dispose();
-        }
+        if (object instanceof THREE.Sprite) { object.material.map?.dispose(); object.material.dispose(); }
       });
       renderer.dispose();
       host.innerHTML = "";
