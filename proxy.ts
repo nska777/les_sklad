@@ -36,13 +36,7 @@ export async function proxy(request: NextRequest) {
       if (requested !== session.warehouse) {
         const nextSession = { ...session, warehouse: requested };
         const response = NextResponse.redirect(request.url);
-        response.cookies.set("warehouse_session", await createSessionToken(nextSession), {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 60 * 60 * 24 * 30,
-          path: "/",
-        });
+        response.cookies.set("warehouse_session", await createSessionToken(nextSession), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 60 * 60 * 24 * 30, path: "/" });
         return response;
       }
     }
@@ -52,20 +46,15 @@ export async function proxy(request: NextRequest) {
     if (canAccessWarehouse(session, "hardware")) {
       const nextSession = { ...session, warehouse: "hardware" as const };
       const response = NextResponse.redirect(request.url);
-      response.cookies.set("warehouse_session", await createSessionToken(nextSession), {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24 * 30,
-        path: "/",
-      });
+      response.cookies.set("warehouse_session", await createSessionToken(nextSession), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 60 * 60 * 24 * 30, path: "/" });
       return response;
     }
     return NextResponse.redirect(new URL(warehouseHome(session.warehouse), request.url));
   }
 
   if (pathname.startsWith("/api/") && !authApi.some((path) => pathname.startsWith(path))) {
-    if (session.warehouse !== "hardware" && !pathname.startsWith("/api/department-warehouse")) {
+    const adminApi = pathname.startsWith("/api/admin/") && session.role === "admin";
+    if (!adminApi && session.warehouse !== "hardware" && !pathname.startsWith("/api/department-warehouse")) {
       return NextResponse.json({ error: "Этот раздел недоступен для выбранного склада" }, { status: 403 });
     }
     if (request.method !== "GET" && request.method !== "HEAD" && session.role === "viewer") {
