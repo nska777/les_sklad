@@ -8,7 +8,7 @@ import WarehouseFullUi from "./warehouse-full-ui";
 import { PaintMaterialsPanel } from "./paint-materials-panel";
 
 type Rack = { id: string; code: string; name: string; storageType: string };
-type Cell = { id: string; rackId: string; code: string; label: string; blocked?: boolean };
+type Cell = { id: string; rackId: string; code: string; label: string; blocked: boolean };
 type Product = { id: string; name: string; sku: string; barcode: string; oneCId?: string | null; unit: string; category: string; subcategory: string; brand: string; color: string; ral: string; packType: string; packSize: number };
 type Stock = { productId: string; cellId: string; quantity: number };
 type Snapshot = { racks: Rack[]; cells: Cell[]; products: Product[]; stocks: Stock[] };
