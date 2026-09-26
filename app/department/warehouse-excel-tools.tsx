@@ -66,8 +66,6 @@ export function WarehouseExcelTools() {
 
   useEffect(() => {
     void load().catch(() => undefined);
-    const timer = window.setInterval(() => void load().catch(() => undefined), 5000);
-    return () => window.clearInterval(timer);
   }, [load]);
 
   useEffect(() => {
