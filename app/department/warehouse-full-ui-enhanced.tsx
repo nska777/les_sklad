@@ -25,7 +25,7 @@ export default function WarehouseFullUiEnhanced() {
     let cancelled = false;
     let created: HTMLElement | null = null;
     const locate = () => {
-      if (cancelled || toolbarMount) return;
+      if (cancelled || created) return;
       const input = document.querySelector('input[placeholder*="Название, артикул, RAL"]');
       const toolbar = input?.closest("div.relative")?.parentElement;
       if (toolbar instanceof HTMLElement) {
@@ -38,7 +38,7 @@ export default function WarehouseFullUiEnhanced() {
     locate();
     const timer = window.setInterval(locate, 500);
     return () => { cancelled = true; window.clearInterval(timer); created?.remove(); };
-  }, [toolbarMount]);
+  }, []);
 
   const load = async () => {
     setLoading(true);
