@@ -1,0 +1,1 @@
+Paint warehouse cleanup update: hard-delete racks/products, clear movement history, import 1C quantities into incoming stock, consume incoming balance when placing materials.
