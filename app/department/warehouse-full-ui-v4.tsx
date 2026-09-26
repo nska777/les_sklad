@@ -12,10 +12,17 @@ export default function WarehouseFullUiV4() {
         try {
           const body = JSON.parse(init.body) as Record<string, unknown>;
           if (body.action === "receive" && String(body.documentNumber || "").includes("РАЗМЕЩЕНИЕ")) {
-            return originalFetch("/api/department-warehouse-maintenance", {
+            return originalFetch("/api/department-warehouse-controls", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ action: "placeProduct", productId: body.productId, cellId: body.cellId, quantity: body.quantity, documentNumber: body.documentNumber, comment: body.comment }),
+            });
+          }
+          if (body.action === "transfer") {
+            return originalFetch("/api/department-warehouse-controls", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "moveProduct", productId: body.productId, fromCellId: body.fromCellId, toCellId: body.toCellId, quantity: body.quantity, comment: body.comment, documentNumber: body.documentNumber }),
             });
           }
         } catch {}
