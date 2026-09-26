@@ -39,7 +39,10 @@ async function parseExcel(file: File) {
     for (let c = 0; c < width; c += 1) {
       if (c === nameCol) continue;
       let n = 0;
-      for (const row of rows.slice(0, 50)) if (String(row[c] ?? "").trim() && Number.isFinite(num(row[c]))) n += 1;
+      for (const row of rows.slice(0, 50)) {
+        const raw = String(row[c] ?? "").trim().replace(/\s/g, "").replace(",", ".");
+        if (raw && Number.isFinite(Number(raw))) n += 1;
+      }
       if (n >= Math.min(3, Math.max(1, rows.length))) candidates.push({ c, n });
     }
     candidates.sort((a, b) => Math.abs(a.c - nameCol) - Math.abs(b.c - nameCol) || b.n - a.n);
@@ -79,20 +82,8 @@ export default function DepartmentOneCMaterialsPage() {
 
   const rackMap = useMemo(() => new Map(data.racks.map((r) => [r.id, r])), [data.racks]);
   const cellMap = useMemo(() => new Map(data.cells.map((c) => [c.id, c])), [data.cells]);
-  const factByCatalog = useMemo(() => {
-    const map = new Map<string, number>();
-    data.products.forEach((item) => { if (item.linkedProductId) map.set(item.id, data.stocks.filter((s) => s.productId === item.linkedProductId).reduce((sum, s) => sum + Number(s.quantity), 0)); });
-    return map;
-  }, [data.products, data.stocks]);
-  const locationsByCatalog = useMemo(() => {
-    const map = new Map<string, string[]>();
-    data.products.forEach((item) => {
-      if (!item.linkedProductId) return;
-      const labels = data.stocks.filter((s) => s.productId === item.linkedProductId && Number(s.quantity) > 0).map((s) => { const cell = cellMap.get(s.cellId); const rack = cell ? rackMap.get(cell.rackId) : undefined; return cell && rack ? `${cell.code}: ${fmt(Number(s.quantity))}` : ""; }).filter(Boolean);
-      if (labels.length) map.set(item.id, labels);
-    });
-    return map;
-  }, [data.products, data.stocks, cellMap, rackMap]);
+  const factByCatalog = useMemo(() => { const map = new Map<string, number>(); data.products.forEach((item) => { if (item.linkedProductId) map.set(item.id, data.stocks.filter((s) => s.productId === item.linkedProductId).reduce((sum, s) => sum + Number(s.quantity), 0)); }); return map; }, [data.products, data.stocks]);
+  const locationsByCatalog = useMemo(() => { const map = new Map<string, string[]>(); data.products.forEach((item) => { if (!item.linkedProductId) return; const labels = data.stocks.filter((s) => s.productId === item.linkedProductId && Number(s.quantity) > 0).map((s) => { const cell = cellMap.get(s.cellId); const rack = cell ? rackMap.get(cell.rackId) : undefined; return cell && rack ? `${cell.code}: ${fmt(Number(s.quantity))}` : ""; }).filter(Boolean); if (labels.length) map.set(item.id, labels); }); return map; }, [data.products, data.stocks, cellMap, rackMap]);
   const filtered = useMemo(() => { const q = query.trim().toLowerCase(); return !q ? data.products : data.products.filter((p) => `${p.name} ${p.sku} ${p.barcode} ${p.oneCId || ""} ${p.category}`.toLowerCase().includes(q)); }, [data.products, query]);
   const perPage = 50, pages = Math.max(1, Math.ceil(filtered.length / perPage)), shown = filtered.slice((page - 1) * perPage, page * perPage);
   useEffect(() => { setPage(1); }, [query]);
@@ -103,21 +94,11 @@ export default function DepartmentOneCMaterialsPage() {
     const precise = num(quantity);
     if (!placing || !cellId || precise <= 0) return toast.error("Выберите ячейку, единицу и точное количество");
     setSaving(true);
-    try {
-      const r = await fetch("/api/department-onec/place", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ catalogId: placing.id, cellId, quantity, inputUnit }) });
-      const body = await r.json() as { error?: string; storedQuantity?: number; storedUnit?: string };
-      if (!r.ok) throw new Error(body.error || "Не удалось разместить материал");
-      toast.success(`Размещено: ${fmt(precise)} ${inputUnit}`, { description: body.storedUnit ? `Учётный остаток: ${fmt(Number(body.storedQuantity || 0))} ${body.storedUnit}` : undefined });
-      setPlacing(null); await load();
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка размещения"); }
+    try { const r = await fetch("/api/department-onec/place", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ catalogId: placing.id, cellId, quantity, inputUnit }) }); const body = await r.json() as { error?: string; storedQuantity?: number; storedUnit?: string }; if (!r.ok) throw new Error(body.error || "Не удалось разместить материал"); toast.success(`Размещено: ${fmt(precise)} ${inputUnit}`, { description: body.storedUnit ? `Учётный остаток: ${fmt(Number(body.storedQuantity || 0))} ${body.storedUnit}` : undefined }); setPlacing(null); await load(); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка размещения"); }
     finally { setSaving(false); }
   };
-  const doImport = async () => {
-    if (!importItems.length) return; setSaving(true);
-    try { const r = await fetch("/api/department-onec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", items: importItems }) }); const body = await r.json() as { error?: string; created?: number; updated?: number }; if (!r.ok) throw new Error(body.error || "Импорт не выполнен"); toast.success(`Справочник 1С: ${body.created || 0} новых, ${body.updated || 0} обновлено`); setImportOpen(false); setImportItems([]); await load(); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка импорта"); }
-    finally { setSaving(false); }
-  };
+  const doImport = async () => { if (!importItems.length) return; setSaving(true); try { const r = await fetch("/api/department-onec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", items: importItems }) }); const body = await r.json() as { error?: string; created?: number; updated?: number }; if (!r.ok) throw new Error(body.error || "Импорт не выполнен"); toast.success(`Справочник 1С: ${body.created || 0} новых, ${body.updated || 0} обновлено`); setImportOpen(false); setImportItems([]); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка импорта"); } finally { setSaving(false); } };
 
   const total1c = data.products.reduce((s, p) => s + Number(p.quantity1c || 0), 0), totalFact = Array.from(factByCatalog.values()).reduce((s, v) => s + v, 0), placedCount = data.products.filter((p) => (factByCatalog.get(p.id) || 0) > 0).length;
 
