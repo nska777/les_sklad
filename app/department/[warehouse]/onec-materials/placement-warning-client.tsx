@@ -3,6 +3,12 @@
 import { useEffect } from "react";
 import { toast } from "sonner";
 
+type PlacementWarningBody = {
+  warning?: string;
+  excessAdded?: number;
+  excessUnit?: string;
+};
+
 export function PlacementWarningClient() {
   useEffect(() => {
     const originalFetch = window.fetch.bind(window);
@@ -13,7 +19,8 @@ export function PlacementWarningClient() {
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
         if (url.includes("/api/department-onec/place") && response.ok) {
           const clone = response.clone();
-          void clone.json().then((body: { warning?: string; excessAdded?: number; excessUnit?: string }) => {
+          void clone.json().then((rawBody: unknown) => {
+            const body = rawBody as PlacementWarningBody;
             if (body.warning) {
               toast.warning("Количество выше остатка 1С", {
                 description: body.warning,
