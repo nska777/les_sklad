@@ -35,36 +35,32 @@ async function ensureIncomingCell(db: Awaited<ReturnType<typeof getDb>>, warehou
   let rack = (await db.select().from(departmentRacks).where(and(eq(departmentRacks.warehouseCode, warehouseCode), eq(departmentRacks.code, rackCode))).limit(1))[0];
   if (!rack) {
     const id = crypto.randomUUID();
-    await db.insert(departmentRacks).values({
-      id,
-      warehouseCode,
-      name: "Приёмка 1С",
-      code: rackCode,
-      rows: 1,
-      columns: 1,
-      storageType: "incoming",
-      width: 1,
-      depth: 1,
-      archived: true,
-    });
+    await db.insert(departmentRacks).values({ id, warehouseCode, name: "Приёмка 1С", code: rackCode, rows: 1, columns: 1, storageType: "incoming", width: 1, depth: 1, archived: true });
     rack = (await db.select().from(departmentRacks).where(eq(departmentRacks.id, id)).limit(1))[0];
   }
   let cell = (await db.select().from(departmentCells).where(and(eq(departmentCells.warehouseCode, warehouseCode), eq(departmentCells.rackId, rack.id))).limit(1))[0];
   if (!cell) {
     const id = crypto.randomUUID();
-    await db.insert(departmentCells).values({
-      id,
-      warehouseCode,
-      rackId: rack.id,
-      code: "ПРИЁМКА-1С",
-      label: "Не размещено / остаток 1С",
-      rowIndex: 0,
-      columnIndex: 0,
-      blocked: false,
-    });
+    await db.insert(departmentCells).values({ id, warehouseCode, rackId: rack.id, code: "ПРИЁМКА-1С", label: "Не размещено / остаток 1С", rowIndex: 0, columnIndex: 0, blocked: false });
     cell = (await db.select().from(departmentCells).where(eq(departmentCells.id, id)).limit(1))[0];
   }
   return cell;
+}
+
+async function stockQty(db: Awaited<ReturnType<typeof getDb>>, warehouseCode: string, productId: string, cellId: string) {
+  const row = (await db.select().from(departmentStocks).where(and(eq(departmentStocks.warehouseCode, warehouseCode), eq(departmentStocks.productId, productId), eq(departmentStocks.cellId, cellId))).limit(1))[0];
+  return Number(row?.quantity || 0);
+}
+
+async function setStock(db: Awaited<ReturnType<typeof getDb>>, warehouseCode: string, productId: string, cellId: string, quantity: number) {
+  const safe = Math.max(0, quantity);
+  const current = (await db.select().from(departmentStocks).where(and(eq(departmentStocks.warehouseCode, warehouseCode), eq(departmentStocks.productId, productId), eq(departmentStocks.cellId, cellId))).limit(1))[0];
+  if (current) {
+    if (safe > 0) await db.update(departmentStocks).set({ quantity: safe, updatedAt: new Date().toISOString() }).where(and(eq(departmentStocks.warehouseCode, warehouseCode), eq(departmentStocks.productId, productId), eq(departmentStocks.cellId, cellId)));
+    else await db.delete(departmentStocks).where(and(eq(departmentStocks.warehouseCode, warehouseCode), eq(departmentStocks.productId, productId), eq(departmentStocks.cellId, cellId)));
+  } else if (safe > 0) {
+    await db.insert(departmentStocks).values({ warehouseCode, productId, cellId, quantity: safe, updatedAt: new Date().toISOString() });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -81,7 +77,6 @@ export async function POST(request: NextRequest) {
       const rack = (await db.select().from(departmentRacks).where(and(eq(departmentRacks.id, id), eq(departmentRacks.warehouseCode, ctx.warehouseCode))).limit(1))[0];
       if (!rack) return NextResponse.json({ error: "Место хранения не найдено" }, { status: 404 });
       if (rack.code === "__1C_INCOMING__") return NextResponse.json({ error: "Системную зону приёмки удалить нельзя" }, { status: 409 });
-
       const rackCells = await db.select({ id: departmentCells.id }).from(departmentCells).where(and(eq(departmentCells.warehouseCode, ctx.warehouseCode), eq(departmentCells.rackId, id)));
       const cellIds = rackCells.map((c) => c.id);
       if (cellIds.length) {
@@ -135,6 +130,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    if (action === "placeProduct") {
+      const productId = clean(body.productId), cellId = clean(body.cellId), quantity = amount(body.quantity);
+      if (!productId || !cellId || quantity <= 0) return NextResponse.json({ error: "Проверьте материал, место и количество" }, { status: 400 });
+      const [product, targetCell] = await Promise.all([
+        db.select().from(departmentProducts).where(and(eq(departmentProducts.id, productId), eq(departmentProducts.warehouseCode, ctx.warehouseCode))).limit(1),
+        db.select().from(departmentCells).where(and(eq(departmentCells.id, cellId), eq(departmentCells.warehouseCode, ctx.warehouseCode))).limit(1),
+      ]);
+      if (!product[0] || !targetCell[0]) return NextResponse.json({ error: "Материал или место хранения не найдено" }, { status: 404 });
+      const incomingCell = await ensureIncomingCell(db, ctx.warehouseCode);
+      const incoming = await stockQty(db, ctx.warehouseCode, productId, incomingCell.id);
+      if (incoming > 0 && incoming < quantity) return NextResponse.json({ error: `В неразмещённом остатке 1С доступно ${incoming}` }, { status: 409 });
+      const target = await stockQty(db, ctx.warehouseCode, productId, cellId);
+      if (incoming > 0) await setStock(db, ctx.warehouseCode, productId, incomingCell.id, incoming - quantity);
+      await setStock(db, ctx.warehouseCode, productId, cellId, target + quantity);
+      await db.insert(departmentMovements).values({ id: crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: incoming > 0 ? "Размещение" : "Приход", productId, fromCellId: incoming > 0 ? incomingCell.id : null, toCellId: cellId, quantity, recipient: "", comment: clean(body.comment) || "Размещение материала", operator: ctx.operator, documentNumber: clean(body.documentNumber) || "РАЗМЕЩЕНИЕ", sourceName: incoming > 0 ? "Остаток 1С" : "Материалы", sourceLocation: incoming > 0 ? incomingCell.code : "", batchId: "" });
+      return NextResponse.json({ ok: true, fromIncoming: incoming > 0, remainingIncoming: Math.max(0, incoming - quantity) });
+    }
+
     if (action === "import1c") {
       const items = Array.isArray(body.items) ? body.items as Array<Record<string, unknown>> : [];
       if (!items.length) return NextResponse.json({ error: "В файле нет строк" }, { status: 400 });
@@ -151,26 +164,7 @@ export async function POST(request: NextRequest) {
         if (!existing) existing = (await db.select().from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.name, name))).limit(1))[0];
 
         const sku = skuRaw || existing?.sku || `1C-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-        const values = {
-          name,
-          sku,
-          barcode: clean(item.barcode) || existing?.barcode || autoBarcode(),
-          category: clean(item.category) || existing?.category || "Краска",
-          subcategory: clean(item.subcategory) || existing?.subcategory || "",
-          brand: clean(item.brand) || existing?.brand || "",
-          color: clean(item.color) || existing?.color || "",
-          ral: clean(item.ral) || existing?.ral || "",
-          unit: clean(item.unit) || existing?.unit || "кг",
-          packType: clean(item.packType) || existing?.packType || "",
-          packSize: Math.max(0, amount(item.packSize ?? existing?.packSize ?? 0)),
-          imageUrl: clean(item.imageUrl) || existing?.imageUrl || "",
-          minStock: Math.max(0, amount(item.minStock ?? existing?.minStock ?? 0)),
-          comment: clean(item.comment) || existing?.comment || "",
-          oneCId: oneCId || existing?.oneCId || null,
-          createdBy: existing?.createdBy || ctx.operator,
-          source: "1c",
-          archived: false,
-        };
+        const values = { name, sku, barcode: clean(item.barcode) || existing?.barcode || autoBarcode(), category: clean(item.category) || existing?.category || "Краска", subcategory: clean(item.subcategory) || existing?.subcategory || "", brand: clean(item.brand) || existing?.brand || "", color: clean(item.color) || existing?.color || "", ral: clean(item.ral) || existing?.ral || "", unit: clean(item.unit) || existing?.unit || "кг", packType: clean(item.packType) || existing?.packType || "", packSize: Math.max(0, amount(item.packSize ?? existing?.packSize ?? 0)), imageUrl: clean(item.imageUrl) || existing?.imageUrl || "", minStock: Math.max(0, amount(item.minStock ?? existing?.minStock ?? 0)), comment: clean(item.comment) || existing?.comment || "", oneCId: oneCId || existing?.oneCId || null, createdBy: existing?.createdBy || ctx.operator, source: "1c", archived: false };
 
         let productId: string;
         if (existing) {
@@ -185,17 +179,10 @@ export async function POST(request: NextRequest) {
 
         if (item.quantity !== undefined && item.quantity !== null && clean(item.quantity) !== "") {
           const qty = Math.max(0, amount(item.quantity));
-          const current = (await db.select().from(departmentStocks).where(and(eq(departmentStocks.warehouseCode, ctx.warehouseCode), eq(departmentStocks.productId, productId), eq(departmentStocks.cellId, incomingCell.id))).limit(1))[0];
-          if (current) {
-            if (qty > 0) await db.update(departmentStocks).set({ quantity: qty, updatedAt: new Date().toISOString() }).where(and(eq(departmentStocks.warehouseCode, ctx.warehouseCode), eq(departmentStocks.productId, productId), eq(departmentStocks.cellId, incomingCell.id)));
-            else await db.delete(departmentStocks).where(and(eq(departmentStocks.warehouseCode, ctx.warehouseCode), eq(departmentStocks.productId, productId), eq(departmentStocks.cellId, incomingCell.id)));
-          } else if (qty > 0) {
-            await db.insert(departmentStocks).values({ warehouseCode: ctx.warehouseCode, productId, cellId: incomingCell.id, quantity: qty, updatedAt: new Date().toISOString() });
-          }
+          await setStock(db, ctx.warehouseCode, productId, incomingCell.id, qty);
           quantities += 1;
         }
       }
-
       return NextResponse.json({ ok: true, created, updated, quantities });
     }
 
