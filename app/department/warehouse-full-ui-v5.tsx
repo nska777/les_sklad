@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useParams } from "next/navigation";
 import { FileSpreadsheet, TriangleAlert } from "lucide-react";
 import WarehouseFullUiV4 from "./warehouse-full-ui-v4";
-import { WarehouseExcelTools } from "./warehouse-excel-tools";
+import { WarehouseExcelToolsV2 } from "./warehouse-excel-tools-v2";
 
 export default function WarehouseFullUiV5() {
   const params = useParams<{ warehouse: string }>();
@@ -52,7 +52,7 @@ export default function WarehouseFullUiV5() {
 
   return <>
     <WarehouseFullUiV4 />
-    <WarehouseExcelTools />
+    <WarehouseExcelToolsV2 />
     {mount ? createPortal(buttons, mount) : null}
   </>;
 }
