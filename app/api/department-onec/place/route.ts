@@ -36,8 +36,10 @@ function unitInfo(value: unknown): UnitInfo | null {
   const raw = clean(value).toLowerCase().replace(/\./g, "");
   if (["кг", "kg", "килограмм", "килограммы"].includes(raw)) return { code: "кг", kind: "mass", factor: 1 };
   if (["г", "гр", "g", "грамм", "граммы"].includes(raw)) return { code: "г", kind: "mass", factor: 0.001 };
+  if (["мг", "mg", "миллиграмм", "миллиграммы"].includes(raw)) return { code: "мг", kind: "mass", factor: 0.000001 };
   if (["л", "l", "литр", "литры"].includes(raw)) return { code: "л", kind: "volume", factor: 1 };
   if (["мл", "ml", "миллилитр", "миллилитры"].includes(raw)) return { code: "мл", kind: "volume", factor: 0.001 };
+  if (["мкл", "mkl", "µl", "ul"].includes(raw)) return { code: "мкл", kind: "volume", factor: 0.000001 };
   if (["шт", "шт.", "pcs", "piece", "штука", "штуки"].includes(clean(value).toLowerCase())) return { code: "шт.", kind: "count", factor: 1 };
   return null;
 }
@@ -77,6 +79,7 @@ export async function POST(request: NextRequest) {
     if (!product && item.oneCId) product = (await db.select().from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.oneCId, item.oneCId))).limit(1))[0];
     if (!product && item.sku) product = (await db.select().from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.sku, item.sku))).limit(1))[0];
 
+    const catalogUnit = unitInfo(item.unit);
     let baseUnit = input.code;
     let normalizedQuantity = enteredQuantity;
     if (product) {
@@ -86,6 +89,9 @@ export async function POST(request: NextRequest) {
       baseUnit = currentUnit.code;
       normalizedQuantity = enteredQuantity * input.factor / currentUnit.factor;
     } else {
+      const targetUnit = catalogUnit && catalogUnit.kind === input.kind ? catalogUnit : input;
+      baseUnit = targetUnit.code;
+      normalizedQuantity = enteredQuantity * input.factor / targetUnit.factor;
       const id = crypto.randomUUID();
       await db.insert(departmentProducts).values({
         id, warehouseCode: ctx.warehouseCode, name: item.name, sku: item.sku || `1C-${id.slice(0, 8).toUpperCase()}`,
@@ -98,16 +104,32 @@ export async function POST(request: NextRequest) {
 
     if (!product) return NextResponse.json({ error: "Не удалось создать фактический материал" }, { status: 500 });
     normalizedQuantity = Number(normalizedQuantity.toFixed(9));
+    const productUnit = unitInfo(baseUnit);
+    if (!productUnit) return NextResponse.json({ error: "Не удалось определить единицу учёта" }, { status: 409 });
+
+    const stockBefore = await db.select().from(departmentStocks).where(and(eq(departmentStocks.warehouseCode, ctx.warehouseCode), eq(departmentStocks.productId, product.id), sql`${departmentStocks.quantity} > 0`));
+    const factBeforeProduct = stockBefore.reduce((sum, s) => sum + Number(s.quantity), 0);
+    const comparisonUnit = catalogUnit && catalogUnit.kind === productUnit.kind ? catalogUnit : productUnit;
+    const factBeforeComparison = factBeforeProduct * productUnit.factor / comparisonUnit.factor;
+    const addComparison = normalizedQuantity * productUnit.factor / comparisonUnit.factor;
+    const limit1c = Number(item.quantity || 0);
+    const excessBefore = Math.max(0, factBeforeComparison - limit1c);
+    const factAfterComparison = factBeforeComparison + addComparison;
+    const excessAfter = Math.max(0, factAfterComparison - limit1c);
+    const excessAdded = Math.max(0, excessAfter - excessBefore);
+
     await db.update(departmentProducts).set({ name: item.name, barcode: item.barcode || product.barcode || autoBarcode(), oneCId: item.oneCId || product.oneCId, unit: baseUnit, archived: false }).where(eq(departmentProducts.id, product.id));
     await db.update(oneCCatalog).set({ linkedProductId: product.id }).where(eq(oneCCatalog.id, item.id));
     await addStock(db, ctx.warehouseCode, product.id, cellId, normalizedQuantity);
     const conversionNote = input.code === baseUnit ? `${enteredQuantity} ${input.code}` : `${enteredQuantity} ${input.code} = ${normalizedQuantity} ${baseUnit}`;
+    const excessNote = excessAdded > 1e-12 ? ` · ВНИМАНИЕ: сверх 1С +${Number(excessAdded.toFixed(9))} ${comparisonUnit.code}; количество учтено в разделе «Излишки»` : "";
     await db.insert(departmentMovements).values({
-      id: crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: "Размещение", productId: product.id, fromCellId: null, toCellId: cellId,
-      quantity: normalizedQuantity, recipient: "", comment: `Фактическое размещение из справочника 1С · ${conversionNote}`, operator: ctx.operator,
-      documentNumber: "1С-РАЗМЕЩЕНИЕ", sourceName: "Справочник 1С", sourceLocation: "", batchId: "",
+      id: crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: excessAdded > 1e-12 ? "Размещение / излишек" : "Размещение", productId: product.id, fromCellId: null, toCellId: cellId,
+      quantity: normalizedQuantity, recipient: "", comment: `Фактическое размещение из справочника 1С · ${conversionNote}${excessNote}`, operator: ctx.operator,
+      documentNumber: excessAdded > 1e-12 ? "1С-ИЗЛИШЕК" : "1С-РАЗМЕЩЕНИЕ", sourceName: "Справочник 1С", sourceLocation: "", batchId: "",
     });
-    return NextResponse.json({ ok: true, productId: product.id, barcode: product.barcode, enteredQuantity, inputUnit: input.code, storedQuantity: normalizedQuantity, storedUnit: baseUnit });
+    const warning = excessAdded > 1e-12 ? `Вы пополняете больше, чем существует в базе 1С. Сверх лимита: ${Number(excessAdded.toFixed(9))} ${comparisonUnit.code}. Излишек автоматически учтён в разделе «Излишки».` : undefined;
+    return NextResponse.json({ ok: true, productId: product.id, barcode: product.barcode, enteredQuantity, inputUnit: input.code, storedQuantity: normalizedQuantity, storedUnit: baseUnit, excessAdded: Number(excessAdded.toFixed(9)), excessTotal: Number(excessAfter.toFixed(9)), excessUnit: comparisonUnit.code, warning });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Операция не выполнена" }, { status: 500 });
   }
