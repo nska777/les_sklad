@@ -19,6 +19,7 @@ type Product = { id: string; name: string; sku: string; barcode: string; unit: s
 type Stock = { productId: string; cellId: string; quantity: number };
 type DimensionRow = { cellId: string; width: number; height: number; depth: number };
 type Snapshot = { warehouse: { code: string; name: string }; racks: Rack[]; cells: Cell[]; products: Product[]; stocks: Stock[]; error?: string };
+type DepartmentPostResponse = { error?: string; rackId?: string };
 const fmt = (v: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 6 }).format(v);
 
 function displayPosition(rack: Rack, racks: Rack[]) {
@@ -67,11 +68,11 @@ export default function PaintStorageRoomPage() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const post = async (payload: Record<string, unknown>, success: string) => {
+  const post = async (payload: Record<string, unknown>, success: string): Promise<DepartmentPostResponse> => {
     setSaving(true);
     try {
       const response = await fetch("/api/department-warehouse", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const body = await response.json() as { error?: string };
+      const body = await response.json() as DepartmentPostResponse;
       if (!response.ok) throw new Error(body.error || "Операция не выполнена");
       toast.success(success); await load(); return body;
     } catch (error) { toast.error(error instanceof Error ? error.message : "Ошибка"); throw error; }
@@ -97,7 +98,7 @@ export default function PaintStorageRoomPage() {
   const submitStorage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const result = await post({ action: mode === "floor" ? "createFloorZone" : "createRack", ...Object.fromEntries(form.entries()) }, mode === "floor" ? "Напольная зона создана" : "Стеллаж создан");
-    const createdRackId = typeof result?.rackId === "string" ? result.rackId : null;
+    const createdRackId = typeof result.rackId === "string" ? result.rackId : null;
     if (createdRackId) setSelectedRackId(createdRackId);
     setMode(null);
   };
