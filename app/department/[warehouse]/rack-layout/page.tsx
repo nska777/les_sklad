@@ -58,7 +58,10 @@ export default function PaintStorageRoomPage() {
       });
       setData({ ...body, cells });
       setSelectedCellId((id) => id && cells.some((c) => c.id === id) ? id : null);
-      setSelectedRackId((id) => id && body.racks.some((r) => r.id === id) ? id : null);
+      setSelectedRackId((id) => {
+        if (id && body.racks.some((r) => r.id === id)) return id;
+        return body.racks[0]?.id || null;
+      });
     } catch (error) { toast.error(error instanceof Error ? error.message : "Ошибка загрузки"); }
     finally { setLoading(false); }
   }, []);
@@ -88,12 +91,14 @@ export default function PaintStorageRoomPage() {
   const selectedProductNames = useMemo(() => selectedStocks.map((s) => data.products.find((p) => p.id === s.productId)?.name || "Материал"), [selectedStocks, data.products]);
 
   const onCellClick = useCallback((cell: Cell) => { setSelectedCellId(cell.id); setSelectedRackId(cell.rackId); }, []);
-  const onRackClick = useCallback((rack: Rack) => { setSelectedRackId(rack.id); setSelectedCellId(null); }, []);
-  const clearSelection = useCallback(() => { setSelectedRackId(null); setSelectedCellId(null); }, []);
+  const onRackClick = useCallback(() => {}, []);
+  const clearSelection = useCallback(() => { setSelectedCellId(null); }, []);
 
   const submitStorage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = new FormData(event.currentTarget);
-    await post({ action: mode === "floor" ? "createFloorZone" : "createRack", ...Object.fromEntries(form.entries()) }, mode === "floor" ? "Напольная зона создана" : "Стеллаж создан");
+    const result = await post({ action: mode === "floor" ? "createFloorZone" : "createRack", ...Object.fromEntries(form.entries()) }, mode === "floor" ? "Напольная зона создана" : "Стеллаж создан");
+    const createdRackId = typeof result?.rackId === "string" ? result.rackId : null;
+    if (createdRackId) setSelectedRackId(createdRackId);
     setMode(null);
   };
   const place = async (event: FormEvent<HTMLFormElement>) => {
@@ -121,7 +126,7 @@ export default function PaintStorageRoomPage() {
       }
       if (!response.ok) throw new Error(body.error || "Не удалось удалить место хранения");
       toast.success("Место хранения удалено", { description: body.removedPositions ? `Списано позиций: ${body.removedPositions}` : undefined });
-      clearSelection(); await load();
+      setSelectedCellId(null); setSelectedRackId(null); await load();
     } catch (error) { toast.error(error instanceof Error ? error.message : "Не удалось удалить"); }
     finally { setSaving(false); }
   };
@@ -131,34 +136,41 @@ export default function PaintStorageRoomPage() {
   return <main className="min-h-screen px-3 py-4 text-[var(--foreground)] sm:px-5 lg:px-7">
     <div className="mx-auto max-w-[1800px] space-y-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад</Link><p className="eyebrow">Склад краски · 3D-комната</p><h1 className="page-title">Склад</h1><p className="page-description">Нажмите на стеллаж — выделится стеллаж. Нажмите на ячейку — ячейка подсветится голубым и откроется карточка с QR, товарами и штрихкодами.</p></div>
+        <div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад</Link><p className="eyebrow">Склад краски · 3D-комната</p><h1 className="page-title">Склад</h1><p className="page-description">Стеллажи редактируются справа. Нажмите на ячейку — она подсветится голубым и откроется карточка с QR, товарами и штрихкодами.</p></div>
         <div className="flex flex-wrap gap-2"><Button onClick={() => setMode("rack")} className="accent-button"><Plus/> Стеллаж</Button><Button variant="outline" onClick={() => setMode("floor")}><MapPin/> Напольная зона</Button></div>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <DepartmentRoomThreeView racks={data.racks} cells={data.cells} stocks={richStocks} selectedCellId={selectedCellId} selectedRackId={selectedRackId} onCellClick={onCellClick} onRackClick={onRackClick} onClearSelection={clearSelection}/>
+        <DepartmentRoomThreeView racks={data.racks} cells={data.cells} stocks={richStocks} selectedCellId={selectedCellId} selectedRackId={null} onCellClick={onCellClick} onRackClick={onRackClick} onClearSelection={clearSelection}/>
         <aside className="panel h-fit p-5 xl:sticky xl:top-4">
-          {selectedRack ? <>
-            <div className="flex items-start justify-between gap-3">
-              <div><p className="eyebrow">{selectedCell ? "Ячейка" : selectedRack.storageType === "floor" ? "Напольная зона" : "Стеллаж"}</p><h2 className="mt-1 text-2xl font-black">{selectedCell?.code || selectedRack.code}</h2><p className="mt-1 text-sm text-slate-500">{selectedRack.name}</p></div>
+          {data.racks.length ? <>
+            <div>
+              <p className="eyebrow">Редактирование склада</p>
+              <label className="mt-3 block text-xs font-black uppercase tracking-wider text-slate-500">Стеллаж / напольная зона</label>
+              <select value={selectedRackId || ""} onChange={(e)=>{ setSelectedRackId(e.target.value || null); setSelectedCellId(null); }} className="mt-1.5 h-11 w-full rounded-xl border bg-white px-3 text-sm font-bold">
+                {data.racks.map((rack)=><option key={rack.id} value={rack.id}>{rack.storageType === "floor" ? "Напольная зона" : "Стеллаж"} {rack.code} · {rack.name}</option>)}
+              </select>
             </div>
 
-            <section className="mt-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
-              <div className="font-black">Выбран объект: {selectedRack.code}</div><div className="mt-1 text-xs text-slate-500">Передвигайте и поворачивайте весь объект кнопками.</div>
-              <div className="mt-3 grid grid-cols-3 gap-2"><div/><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,-1,0)} disabled={saving}><ArrowUp size={15}/></Button><div/><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(-1,0,0)} disabled={saving}><ArrowLeft size={15}/></Button><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">1 м</div><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(1,0,0)} disabled={saving}><ArrowRight size={15}/></Button><div/><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,1,0)} disabled={saving}><ArrowDown size={15}/></Button><div/></div>
-              <div className="mt-2 grid grid-cols-2 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,0,-Math.PI/12)} disabled={saving}><RotateCcw size={15}/> -15°</Button><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,0,Math.PI/12)} disabled={saving}><RotateCw size={15}/> +15°</Button></div>
-              {selectedRack.storageType !== "floor" && <Button type="button" className="mt-3 w-full bg-blue-600 hover:bg-blue-700" onClick={() => setConstructorOpen(true)}><PencilRuler size={16}/> Редактировать стеллаж</Button>}
-            </section>
+            {selectedRack && <>
+              <section className="mt-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
+                <div className="font-black">{selectedRack.storageType === "floor" ? "Напольная зона" : "Стеллаж"} {selectedRack.code}</div>
+                <div className="mt-1 text-xs text-slate-500">Весь функционал редактирования находится здесь — выбирать сам стеллаж в 3D больше не нужно.</div>
+                <div className="mt-3 grid grid-cols-3 gap-2"><div/><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,-1,0)} disabled={saving}><ArrowUp size={15}/></Button><div/><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(-1,0,0)} disabled={saving}><ArrowLeft size={15}/></Button><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">1 м</div><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(1,0,0)} disabled={saving}><ArrowRight size={15}/></Button><div/><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,1,0)} disabled={saving}><ArrowDown size={15}/></Button><div/></div>
+                <div className="mt-2 grid grid-cols-2 gap-2"><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,0,-Math.PI/12)} disabled={saving}><RotateCcw size={15}/> -15°</Button><Button type="button" variant="outline" size="sm" onClick={() => void moveStorage(0,0,Math.PI/12)} disabled={saving}><RotateCw size={15}/> +15°</Button></div>
+                {selectedRack.storageType !== "floor" && <Button type="button" className="mt-3 w-full bg-blue-600 hover:bg-blue-700" onClick={() => setConstructorOpen(true)}><PencilRuler size={16}/> Редактировать стеллаж</Button>}
+                <Button variant="outline" className="mt-3 w-full text-red-600" onClick={() => void deleteStorage()} disabled={saving}><Trash2/> Удалить {selectedRack.storageType === "floor" ? "напольную зону" : "стеллаж"}</Button>
+              </section>
 
-            {effectiveCell && <>
-              <div className="mt-4"><ZoomableQr value={effectiveCell.code} label={effectiveCell.code} size={165} className="w-full"/></div>
-              <div className="mt-4 rounded-2xl bg-sky-50 p-3 text-sm text-slate-700">{selectedProductNames.length ? <><b>В этой ячейке хранятся:</b> {selectedProductNames.join(", ")}.</> : <><b>Ячейка свободна.</b> Материалов сейчас нет.</>}</div>
-              <div className="mt-4 space-y-3">{selectedStocks.map((stock) => { const product=data.products.find((x)=>x.id===stock.productId); return <div key={stock.productId} className="rounded-xl border bg-slate-50 p-3"><div data-product-name className="font-bold">{product?.name}</div><div className="mt-1 text-sm text-slate-500">{fmt(Number(stock.quantity))} {product?.unit}{product?.packSize ? ` · ≈ ${fmt(Number(stock.quantity)/Number(product.packSize))} ${product.packType||"уп."}`:""}</div>{product?.barcode ? <div className="mt-3"><ProductBarcode value={product.barcode} productName={product.name} compact/></div> : <div className="mt-3 rounded-lg border border-dashed bg-white p-2 text-center text-xs text-slate-400">Штрихкод не назначен</div>}</div>; })}{!selectedStocks.length && <div className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-400">Место свободно</div>}</div>
-              <form onSubmit={place} className="mt-5 space-y-3 border-t pt-5"><div className="font-black">Разместить материал</div><div><Label>Материал</Label><select name="productId" required className="mt-1.5 h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Выберите...</option>{data.products.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.unit}</option>)}</select></div><div><Label>Количество</Label><Input name="quantity" required inputMode="decimal" className="mt-1.5"/></div><Button disabled={saving} className="accent-button w-full"><PackagePlus/> Разместить</Button></form>
+              {selectedCell && <section className="mt-4 border-t pt-4">
+                <div><p className="eyebrow">Выбранная ячейка</p><h2 className="mt-1 text-2xl font-black">{selectedCell.code}</h2><p className="mt-1 text-sm text-slate-500">{selectedRack.name}</p></div>
+                <div className="mt-4"><ZoomableQr value={selectedCell.code} label={selectedCell.code} size={165} className="w-full"/></div>
+                <div className="mt-4 rounded-2xl bg-sky-50 p-3 text-sm text-slate-700">{selectedProductNames.length ? <><b>В этой ячейке хранятся:</b> {selectedProductNames.join(", ")}.</> : <><b>Ячейка свободна.</b> Материалов сейчас нет.</>}</div>
+                <div className="mt-4 space-y-3">{selectedStocks.map((stock) => { const product=data.products.find((x)=>x.id===stock.productId); return <div key={stock.productId} className="rounded-xl border bg-slate-50 p-3"><div data-product-name className="font-bold">{product?.name}</div><div className="mt-1 text-sm text-slate-500">{fmt(Number(stock.quantity))} {product?.unit}{product?.packSize ? ` · ≈ ${fmt(Number(stock.quantity)/Number(product.packSize))} ${product.packType||"уп."}`:""}</div>{product?.barcode ? <div className="mt-3"><ProductBarcode value={product.barcode} productName={product.name} compact/></div> : <div className="mt-3 rounded-lg border border-dashed bg-white p-2 text-center text-xs text-slate-400">Штрихкод не назначен</div>}</div>; })}{!selectedStocks.length && <div className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-400">Место свободно</div>}</div>
+                <form onSubmit={place} className="mt-5 space-y-3 border-t pt-5"><div className="font-black">Разместить материал</div><div><Label>Материал</Label><select name="productId" required className="mt-1.5 h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Выберите...</option>{data.products.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.unit}</option>)}</select></div><div><Label>Количество</Label><Input name="quantity" required inputMode="decimal" className="mt-1.5"/></div><Button disabled={saving} className="accent-button w-full"><PackagePlus/> Разместить</Button></form>
+              </section>}
             </>}
-
-            <Button variant="outline" className="mt-3 w-full text-red-600" onClick={() => void deleteStorage()} disabled={saving}><Trash2/> Удалить {selectedRack.storageType === "floor" ? "напольную зону" : "стеллаж"}</Button>
-          </> : <div className="py-12 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Box size={22}/></div><h3 className="mt-4 font-black">Ничего не выбрано</h3><p className="mt-2 text-sm leading-6 text-slate-500">Нажмите на стеллаж, ячейку или напольную зону. Чтобы снять выделение — нажмите на пустое место в 3D-комнате.</p></div>}
+          </> : <div className="py-12 text-center"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Box size={22}/></div><h3 className="mt-4 font-black">Стеллажей пока нет</h3><p className="mt-2 text-sm leading-6 text-slate-500">Создайте стеллаж или напольную зону кнопками сверху.</p></div>}
         </aside>
       </div>
 
