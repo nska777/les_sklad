@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "next/navigation";
-import { FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet, TriangleAlert } from "lucide-react";
 import WarehouseFullUiV4 from "./warehouse-full-ui-v4";
 
 export default function WarehouseFullUiV5() {
@@ -29,10 +29,13 @@ export default function WarehouseFullUiV5() {
     return () => { stopped = true; window.clearInterval(timer); created?.remove(); };
   }, []);
 
-  const button = <a href={`/department/${warehouse}/onec-materials`} data-same-tab="true" className="inline-flex h-9 items-center gap-2 rounded-lg border bg-white/80 px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"><FileSpreadsheet size={15}/> Материалы из 1С</a>;
+  const buttons = <span className="inline-flex items-center gap-2">
+    <a href={`/department/${warehouse}/onec-materials`} data-same-tab="true" className="inline-flex h-9 items-center gap-2 rounded-lg border bg-white/80 px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"><FileSpreadsheet size={15}/> Материалы из 1С</a>
+    <a href={`/department/${warehouse}/excess`} data-same-tab="true" className="inline-flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 shadow-sm hover:bg-amber-100"><TriangleAlert size={15}/> Излишки</a>
+  </span>;
 
   return <>
     <WarehouseFullUiV4 />
-    {mount ? createPortal(button, mount) : null}
+    {mount ? createPortal(buttons, mount) : null}
   </>;
 }
