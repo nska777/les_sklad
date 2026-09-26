@@ -12,6 +12,8 @@ type Cell = { id: string; rackId: string; code: string; label: string; blocked: 
 type Rack = { id: string; code: string; name: string; storageType: string };
 type Stock = { productId: string; cellId: string; quantity: number };
 type MoveDraft = { product: Product; stock: Stock } | null;
+type AuthMeResponse = { user?: { role?: string } };
+type WarehouseResponse = { racks?: Rack[] };
 
 const fmt = (v: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 9 }).format(v);
 const preciseUnits = ["кг", "г", "мг", "л", "мл", "мкл", "шт."];
@@ -43,8 +45,26 @@ export function PaintMaterialsPanel({ products, cells, stocks }: { products: Pro
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void fetch("/api/auth/me", { cache: "no-store" }).then((r) => r.json()).then((body) => setIsAdmin(body?.user?.role === "admin")).catch(() => setIsAdmin(false));
-    void fetch("/api/department-warehouse", { cache: "no-store" }).then((r) => r.json()).then((body) => setRacks(Array.isArray(body?.racks) ? body.racks : [])).catch(() => setRacks([]));
+    const loadAccess = async () => {
+      try {
+        const r = await fetch("/api/auth/me", { cache: "no-store" });
+        const body = await r.json() as AuthMeResponse;
+        setIsAdmin(body.user?.role === "admin");
+      } catch {
+        setIsAdmin(false);
+      }
+    };
+    const loadRacks = async () => {
+      try {
+        const r = await fetch("/api/department-warehouse", { cache: "no-store" });
+        const body = await r.json() as WarehouseResponse;
+        setRacks(Array.isArray(body.racks) ? body.racks : []);
+      } catch {
+        setRacks([]);
+      }
+    };
+    void loadAccess();
+    void loadRacks();
   }, []);
 
   const filtered = useMemo(() => {
