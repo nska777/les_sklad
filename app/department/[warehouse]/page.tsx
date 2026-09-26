@@ -1,1 +1,1 @@
-export { default } from "../warehouse-full-ui-v4";
+export { default } from "../warehouse-full-ui-v5";
