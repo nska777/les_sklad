@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { createRoot, Root } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { QRCodeSVG } from "qrcode.react";
 import "./rack-layout.css";
 
