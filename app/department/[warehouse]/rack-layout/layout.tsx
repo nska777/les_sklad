@@ -38,7 +38,27 @@ export default function PaintRackLayout({ children }: { children: React.ReactNod
       body: JSON.stringify({ action: "purgeArchived" }),
     }).catch(() => undefined);
 
-    return () => { window.fetch = originalFetch; };
+    const simplifyQrLabels = () => {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const nodes: Text[] = [];
+      let node = walker.nextNode();
+      while (node) {
+        if (node instanceof Text && node.nodeValue?.includes("RL-CELL:")) nodes.push(node);
+        node = walker.nextNode();
+      }
+      nodes.forEach((textNode) => {
+        const value = textNode.nodeValue || "";
+        textNode.nodeValue = value.replace(/RL-CELL:[^:\s]+:([^\s]+)/g, "$1");
+      });
+    };
+    simplifyQrLabels();
+    const observer = new MutationObserver(simplifyQrLabels);
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+
+    return () => {
+      observer.disconnect();
+      window.fetch = originalFetch;
+    };
   }, []);
 
   return <div className="paint-rack-layout-page">{children}</div>;
