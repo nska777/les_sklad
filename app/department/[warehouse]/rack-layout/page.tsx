@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Layers3, Loader2, MapPin, PackagePlus, PencilRuler, Plus, QrCode, RotateCcw, RotateCw, Trash2 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Layers3, Loader2, MapPin, PackagePlus, PencilRuler, Plus, RotateCcw, RotateCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ProductBarcode } from "@/components/product-barcode";
+import { ZoomableQr } from "@/components/zoomable-qr";
 import { DepartmentRoomThreeView } from "./department-room-three-view";
 import { PaintRackVisualConstructor } from "./paint-rack-visual-constructor";
 
@@ -18,7 +19,7 @@ type Product = { id: string; name: string; sku: string; barcode: string; unit: s
 type Stock = { productId: string; cellId: string; quantity: number };
 type DimensionRow = { cellId: string; width: number; height: number; depth: number };
 type Snapshot = { warehouse: { code: string; name: string }; racks: Rack[]; cells: Cell[]; products: Product[]; stocks: Stock[]; error?: string };
-const fmt = (v: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(v);
+const fmt = (v: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 6 }).format(v);
 
 function displayPosition(rack: Rack, racks: Rack[]) {
   const explicit = Math.abs(Number(rack.posX || 0)) > .01 || Math.abs(Number(rack.posZ || 0)) > .01;
@@ -84,6 +85,7 @@ export default function PaintStorageRoomPage() {
   const effectiveCell = selectedCell || (selectedRack?.storageType === "floor" ? data.cells.find((c) => c.rackId === selectedRack.id) || null : null);
   const selectedStocks = useMemo(() => effectiveCell ? data.stocks.filter((s) => s.cellId === effectiveCell.id && Number(s.quantity) > 0) : [], [effectiveCell, data.stocks]);
   const richStocks = useMemo(() => data.stocks.map((s) => { const product = data.products.find((x) => x.id === s.productId); return { ...s, productName: product?.name || "Материал", unit: product?.unit || "", color: product?.color || "", packType: product?.packType || "", packSize: Number(product?.packSize || 0) }; }), [data.stocks, data.products]);
+  const selectedProductNames = useMemo(() => selectedStocks.map((s) => data.products.find((p) => p.id === s.productId)?.name || "Материал"), [selectedStocks, data.products]);
 
   const onCellClick = useCallback((cell: Cell) => { setSelectedCellId(cell.id); setSelectedRackId(cell.rackId); }, []);
   const onRackClick = useCallback((rack: Rack) => { setSelectedRackId(rack.id); setSelectedCellId(null); }, []);
@@ -129,7 +131,7 @@ export default function PaintStorageRoomPage() {
   return <main className="min-h-screen px-3 py-4 text-[var(--foreground)] sm:px-5 lg:px-7">
     <div className="mx-auto max-w-[1800px] space-y-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад</Link><p className="eyebrow">Склад краски · 3D-комната</p><h1 className="page-title">Склад</h1><p className="page-description">Нажмите на стеллаж — выделится стеллаж. Нажмите на ячейку — выделится ячейка. Нажмите в пустое место — выделение снимется.</p></div>
+        <div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад</Link><p className="eyebrow">Склад краски · 3D-комната</p><h1 className="page-title">Склад</h1><p className="page-description">Нажмите на стеллаж — выделится стеллаж. Нажмите на ячейку — ячейка подсветится голубым и откроется карточка с QR, товарами и штрихкодами.</p></div>
         <div className="flex flex-wrap gap-2"><Button onClick={() => setMode("rack")} className="accent-button"><Plus/> Стеллаж</Button><Button variant="outline" onClick={() => setMode("floor")}><MapPin/> Напольная зона</Button></div>
       </div>
 
@@ -139,7 +141,6 @@ export default function PaintStorageRoomPage() {
           {selectedRack ? <>
             <div className="flex items-start justify-between gap-3">
               <div><p className="eyebrow">{selectedCell ? "Ячейка" : selectedRack.storageType === "floor" ? "Напольная зона" : "Стеллаж"}</p><h2 className="mt-1 text-2xl font-black">{selectedCell?.code || selectedRack.code}</h2><p className="mt-1 text-sm text-slate-500">{selectedRack.name}</p></div>
-              {effectiveCell && <div className="rounded-xl bg-slate-950 p-2.5 text-white"><QrCode size={20}/></div>}
             </div>
 
             <section className="mt-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-4">
@@ -150,10 +151,10 @@ export default function PaintStorageRoomPage() {
             </section>
 
             {effectiveCell && <>
-              <div className="mt-4 flex justify-center rounded-2xl border bg-white p-4"><QRCodeSVG value={`RL-CELL:${data.warehouse.code}:${effectiveCell.code}`} size={165}/></div>
-              <div className="mt-2 text-center text-xs font-mono text-slate-400">RL-CELL:{data.warehouse.code}:{effectiveCell.code}</div>
-              <div className="mt-5 space-y-2">{selectedStocks.map((stock) => { const product=data.products.find((x)=>x.id===stock.productId); return <div key={stock.productId} className="rounded-xl border bg-slate-50 p-3"><div className="font-bold">{product?.name}</div><div className="mt-1 text-sm text-slate-500">{fmt(Number(stock.quantity))} {product?.unit}{product?.packSize ? ` · ≈ ${fmt(Number(stock.quantity)/Number(product.packSize))} ${product.packType||"уп."}`:""}</div></div>; })}{!selectedStocks.length && <div className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-400">Место свободно</div>}</div>
-              <form onSubmit={place} className="mt-5 space-y-3 border-t pt-5"><div className="font-black">Разместить материал</div><div><Label>Материал</Label><select name="productId" required className="mt-1.5 h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Выберите...</option>{data.products.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.unit}</option>)}</select></div><div><Label>Количество</Label><Input name="quantity" required type="number" step="0.001" min="0.001" className="mt-1.5"/></div><Button disabled={saving} className="accent-button w-full"><PackagePlus/> Разместить</Button></form>
+              <div className="mt-4"><ZoomableQr value={effectiveCell.code} label={effectiveCell.code} size={165} className="w-full"/></div>
+              <div className="mt-4 rounded-2xl bg-sky-50 p-3 text-sm text-slate-700">{selectedProductNames.length ? <><b>В этой ячейке хранятся:</b> {selectedProductNames.join(", ")}.</> : <><b>Ячейка свободна.</b> Материалов сейчас нет.</>}</div>
+              <div className="mt-4 space-y-3">{selectedStocks.map((stock) => { const product=data.products.find((x)=>x.id===stock.productId); return <div key={stock.productId} className="rounded-xl border bg-slate-50 p-3"><div data-product-name className="font-bold">{product?.name}</div><div className="mt-1 text-sm text-slate-500">{fmt(Number(stock.quantity))} {product?.unit}{product?.packSize ? ` · ≈ ${fmt(Number(stock.quantity)/Number(product.packSize))} ${product.packType||"уп."}`:""}</div>{product?.barcode ? <div className="mt-3"><ProductBarcode value={product.barcode} productName={product.name} compact/></div> : <div className="mt-3 rounded-lg border border-dashed bg-white p-2 text-center text-xs text-slate-400">Штрихкод не назначен</div>}</div>; })}{!selectedStocks.length && <div className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-400">Место свободно</div>}</div>
+              <form onSubmit={place} className="mt-5 space-y-3 border-t pt-5"><div className="font-black">Разместить материал</div><div><Label>Материал</Label><select name="productId" required className="mt-1.5 h-10 w-full rounded-md border bg-white px-3 text-sm"><option value="">Выберите...</option>{data.products.map((p)=><option key={p.id} value={p.id}>{p.name} · {p.unit}</option>)}</select></div><div><Label>Количество</Label><Input name="quantity" required inputMode="decimal" className="mt-1.5"/></div><Button disabled={saving} className="accent-button w-full"><PackagePlus/> Разместить</Button></form>
             </>}
 
             <Button variant="outline" className="mt-3 w-full text-red-600" onClick={() => void deleteStorage()} disabled={saving}><Trash2/> Удалить {selectedRack.storageType === "floor" ? "напольную зону" : "стеллаж"}</Button>
