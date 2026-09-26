@@ -11,19 +11,12 @@ export default function PaintRackLayout({ children }: { children: React.ReactNod
       const method = String(init?.method || "GET").toUpperCase();
       if (method === "POST" && typeof init?.body === "string") {
         try {
-          const body = JSON.parse(init.body) as { action?: string; id?: string; productId?: string; cellId?: string; quantity?: unknown; documentNumber?: string; comment?: string };
+          const body = JSON.parse(init.body) as { action?: string; id?: string };
           if (url.endsWith("/api/department-warehouse/storage") && body.action === "deleteStorage" && body.id) {
             return originalFetch("/api/department-warehouse-maintenance", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ action: "hardDeleteRack", id: body.id }),
-            });
-          }
-          if (url.endsWith("/api/department-warehouse") && body.action === "receive" && String(body.documentNumber || "").includes("РАЗМЕЩЕНИЕ")) {
-            return originalFetch("/api/department-warehouse-maintenance", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "placeProduct", productId: body.productId, cellId: body.cellId, quantity: body.quantity, documentNumber: body.documentNumber, comment: body.comment }),
             });
           }
         } catch { /* use original request */ }
@@ -38,27 +31,7 @@ export default function PaintRackLayout({ children }: { children: React.ReactNod
       body: JSON.stringify({ action: "purgeArchived" }),
     }).catch(() => undefined);
 
-    const simplifyQrLabels = () => {
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      const nodes: Text[] = [];
-      let node = walker.nextNode();
-      while (node) {
-        if (node instanceof Text && node.nodeValue?.includes("RL-CELL:")) nodes.push(node);
-        node = walker.nextNode();
-      }
-      nodes.forEach((textNode) => {
-        const value = textNode.nodeValue || "";
-        textNode.nodeValue = value.replace(/RL-CELL:[^:\s]+:([^\s]+)/g, "$1");
-      });
-    };
-    simplifyQrLabels();
-    const observer = new MutationObserver(simplifyQrLabels);
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-
-    return () => {
-      observer.disconnect();
-      window.fetch = originalFetch;
-    };
+    return () => { window.fetch = originalFetch; };
   }, []);
 
   return <div className="paint-rack-layout-page">{children}</div>;

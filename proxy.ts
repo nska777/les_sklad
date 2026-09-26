@@ -54,7 +54,8 @@ export async function proxy(request: NextRequest) {
 
   if (pathname.startsWith("/api/") && !authApi.some((path) => pathname.startsWith(path))) {
     const adminApi = pathname.startsWith("/api/admin/") && session.role === "admin";
-    if (!adminApi && session.warehouse !== "hardware" && !pathname.startsWith("/api/department-warehouse")) {
+    const departmentApi = pathname.startsWith("/api/department-warehouse") || pathname.startsWith("/api/department-onec");
+    if (!adminApi && session.warehouse !== "hardware" && !departmentApi) {
       return NextResponse.json({ error: "Этот раздел недоступен для выбранного склада" }, { status: 403 });
     }
     if (request.method !== "GET" && request.method !== "HEAD" && session.role === "viewer") {
