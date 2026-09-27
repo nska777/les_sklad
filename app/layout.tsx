@@ -13,6 +13,7 @@ import { IssueMobileScanTools } from "@/app/issue-mobile-scan-tools";
 import { RackVisualAddCellHelper } from "@/app/rack-visual-add-cell-helper";
 import { PageTitleController } from "@/app/page-title-controller";
 import { HidePrimaryInventory } from "@/app/hide-primary-inventory";
+import { ResilienceIndicator } from "@/app/resilience-indicator";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -43,6 +44,7 @@ export default function RootLayout({
         <AddStockExceptionHelper />
         <NewTabPageLinks />
         <RackTabRouter />
+        <ResilienceIndicator />
         {children}
         <MaterialsAddAction />
         <IssueMobileScanTools />
