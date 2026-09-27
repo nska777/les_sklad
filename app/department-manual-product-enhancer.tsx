@@ -28,28 +28,38 @@ function relabel(form: HTMLFormElement, name: string, text: string) {
   if (label) label.textContent = text;
 }
 
-function addInitialQuantityField(form: HTMLFormElement) {
+function addActualQuantityField(form: HTMLFormElement) {
   if (form.elements.namedItem("initialQuantity")) return;
-  const minStock = form.elements.namedItem("minStock");
-  if (!(minStock instanceof HTMLInputElement)) return;
-  const minWrap = fieldWrap(minStock);
-  if (!minWrap?.parentElement) return;
+  const unit = form.elements.namedItem("unit");
+  const nameInput = form.elements.namedItem("name");
+  if (!(unit instanceof HTMLSelectElement) || !(nameInput instanceof HTMLInputElement)) return;
+  const unitWrap = fieldWrap(unit);
+  if (!unitWrap?.parentElement) return;
 
   const wrap = document.createElement("div");
   const fieldLabel = document.createElement("label");
-  fieldLabel.textContent = "Начальный фактический остаток";
+  fieldLabel.textContent = "Фактическое количество *";
+
   const input = document.createElement("input");
   input.name = "initialQuantity";
   input.type = "number";
-  input.min = "0";
+  input.min = "0.000000001";
   input.step = "0.000000001";
   input.inputMode = "decimal";
-  input.placeholder = "Например: 1";
-  input.className = minStock.className;
-  input.title = "Реальное количество материала, которое уже есть на складе. Можно оставить 0 и оприходовать позже.";
+  input.required = true;
+  input.setAttribute("aria-required", "true");
+  input.placeholder = "Например: 20";
+  input.className = nameInput.className;
+  input.title = "Сколько материала фактически есть сейчас. Значение сразу попадёт в остаток склада.";
+
+  const hint = document.createElement("div");
+  hint.className = "mt-1 text-[11px] text-slate-400";
+  hint.textContent = "Укажите реальный остаток — например 20 кг, 5 л или 12 шт.";
+
   wrap.appendChild(fieldLabel);
   wrap.appendChild(input);
-  minWrap.parentElement.insertBefore(wrap, minWrap);
+  wrap.appendChild(hint);
+  unitWrap.insertAdjacentElement("afterend", wrap);
 }
 
 function enhance(form: HTMLFormElement) {
@@ -59,15 +69,16 @@ function enhance(form: HTMLFormElement) {
 
   form.dataset.manualProductEnhanced = "1";
 
-  const removeNames = ["oneCId", "subcategory", "imageUrl"];
+  addActualQuantityField(form);
+
+  const removeNames = ["oneCId", "subcategory", "imageUrl", "packSize", "minStock"];
   for (const name of removeNames) {
     const input = form.elements.namedItem(name);
     if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) fieldWrap(input)?.remove();
   }
 
-  addInitialQuantityField(form);
-  relabel(form, "packSize", "Количество в одной таре");
-  relabel(form, "minStock", "Контрольный минимум");
+  relabel(form, "unit", "Единица измерения *");
+  relabel(form, "packType", "Тара (необязательно)");
 
   const placeholders: Record<string, string> = {
     name: "Например: Краска акриловая",
@@ -76,9 +87,7 @@ function enhance(form: HTMLFormElement) {
     brand: "Например: Sayerlack",
     color: "Например: Белый",
     ral: "Например: 9016",
-    packSize: "Например: 20",
-    minStock: "Например: 5 — порог предупреждения",
-    comment: "Например: Добавлено после фактической приёмки",
+    comment: "Например: Первичный фактический остаток",
   };
 
   for (const [name, placeholder] of Object.entries(placeholders)) {
@@ -86,12 +95,18 @@ function enhance(form: HTMLFormElement) {
     if (input instanceof HTMLInputElement) input.placeholder = placeholder;
   }
 
+  const unit = form.elements.namedItem("unit");
+  if (unit instanceof HTMLSelectElement) {
+    unit.required = true;
+    unit.setAttribute("aria-required", "true");
+  }
+
   const comment = form.elements.namedItem("comment");
   if (comment instanceof HTMLInputElement) {
     comment.required = true;
     comment.setAttribute("aria-required", "true");
     const label = fieldWrap(comment)?.querySelector("label");
-    if (label && !label.textContent?.includes("*")) label.textContent = "Комментарий *";
+    if (label) label.textContent = "Комментарий *";
   }
 
   const sku = form.elements.namedItem("sku");
@@ -121,7 +136,9 @@ function enhance(form: HTMLFormElement) {
   form.addEventListener("submit", (event) => {
     const name = form.elements.namedItem("name");
     const skuInput = form.elements.namedItem("sku");
+    const quantityInput = form.elements.namedItem("initialQuantity");
     const commentInput = form.elements.namedItem("comment");
+
     if (!(name instanceof HTMLInputElement) || !name.value.trim()) return;
     if (!(skuInput instanceof HTMLInputElement) || !skuInput.value.trim()) {
       event.preventDefault();
@@ -130,16 +147,23 @@ function enhance(form: HTMLFormElement) {
       skuInput instanceof HTMLInputElement && skuInput.focus();
       return;
     }
+    if (!(quantityInput instanceof HTMLInputElement) || parsePositive(quantityInput.value) <= 0) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      toast.error("Укажите фактическое количество", { description: "Например: 20 кг, 5 л или 12 шт." });
+      quantityInput instanceof HTMLInputElement && quantityInput.focus();
+      return;
+    }
     if (!(commentInput instanceof HTMLInputElement) || !commentInput.value.trim()) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      toast.error("Комментарий обязателен", { description: "Укажите причину добавления материала." });
+      toast.error("Комментарий обязателен", { description: "Коротко укажите основание добавления материала." });
       commentInput instanceof HTMLInputElement && commentInput.focus();
     }
   }, true);
 
   const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"], button:not([type])');
-  if (submitButton) submitButton.title = "Добавление и начальный остаток будут зафиксированы во вкладке «Движения»";
+  if (submitButton) submitButton.title = "Материал и указанное фактическое количество сразу попадут в склад";
 }
 
 function cleanMaterialTable(root: ParentNode = document) {
@@ -182,12 +206,13 @@ export function DepartmentManualProductEnhancer() {
                     quantity: initialQuantity,
                     unit: String(payload.unit || "кг"),
                     cellId: "",
-                    comment: payload.comment || "Начальный фактический остаток",
+                    comment: payload.comment || "Первичный фактический остаток",
                   }),
                 });
                 if (!receipt.ok) {
                   const receiptBody = await receipt.json().catch(() => ({})) as { error?: string };
-                  toast.error("Материал создан, но остаток не записан", { description: receiptBody.error || "Оприходуйте количество через вкладку «Приход»." });
+                  toast.error("Материал создан, но количество не записано", { description: receiptBody.error || "Повторите оприходование через вкладку «Приход»." });
+                  return response;
                 }
               }
 
