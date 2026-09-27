@@ -57,9 +57,28 @@ function getLocalDb() {
       scope TEXT NOT NULL,
       applied_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS resilience_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
   localDb = db;
   return db;
+}
+
+function rowToOperation(row: Record<string, unknown>): QueuedOperation {
+  return {
+    id: String(row.id),
+    scope: String(row.scope),
+    action: String(row.action),
+    payload: JSON.parse(String(row.payload || "{}")) as Record<string, unknown>,
+    status: String(row.status) as SyncStatus,
+    attempts: Number(row.attempts || 0),
+    createdAt: String(row.created_at || ""),
+    lastError: String(row.last_error || ""),
+    syncedAt: String(row.synced_at || ""),
+  };
 }
 
 export function saveLocalSnapshot(scope: string, payload: unknown) {
@@ -103,17 +122,36 @@ export function listPendingOperations(limit = 100): QueuedOperation[] {
     ORDER BY created_at ASC
     LIMIT ?
   `).all(limit) as Array<Record<string, unknown>>;
-  return rows.map((row) => ({
-    id: String(row.id),
-    scope: String(row.scope),
-    action: String(row.action),
-    payload: JSON.parse(String(row.payload || "{}")) as Record<string, unknown>,
-    status: String(row.status) as SyncStatus,
-    attempts: Number(row.attempts || 0),
-    createdAt: String(row.created_at || ""),
-    lastError: String(row.last_error || ""),
-    syncedAt: String(row.synced_at || ""),
-  }));
+  return rows.map(rowToOperation);
+}
+
+export function claimPendingOperations(scope: string, limit = 20): QueuedOperation[] {
+  const db = getLocalDb();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const rows = db.prepare(`
+      SELECT id, scope, action, payload, status, attempts, created_at, last_error, synced_at
+      FROM sync_queue
+      WHERE scope = ? AND status IN ('pending','error')
+      ORDER BY created_at ASC
+      LIMIT ?
+    `).all(scope, limit) as Array<Record<string, unknown>>;
+    const claimed: QueuedOperation[] = [];
+    const update = db.prepare("UPDATE sync_queue SET status='syncing', attempts=attempts+1 WHERE id=? AND status IN ('pending','error')");
+    for (const row of rows) {
+      const result = update.run(String(row.id));
+      if (Number(result.changes || 0) > 0) claimed.push({ ...rowToOperation(row), status: "syncing", attempts: Number(row.attempts || 0) + 1 });
+    }
+    db.exec("COMMIT");
+    return claimed;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function recoverStuckSyncOperations() {
+  getLocalDb().prepare("UPDATE sync_queue SET status='pending', last_error='Восстановлено после перезапуска' WHERE status='syncing'").run();
 }
 
 export function markOperationSyncing(id: string) {
@@ -135,11 +173,40 @@ export function operationWasApplied(id: string) {
   return Boolean(getLocalDb().prepare("SELECT operation_id FROM applied_operations WHERE operation_id=?").get(id));
 }
 
+export function setCentralDatabaseState(online: boolean, error = "") {
+  const db = getLocalDb();
+  const now = new Date().toISOString();
+  const values = [
+    ["database_online", online ? "1" : "0"],
+    ["database_error", error],
+  ] as const;
+  const stmt = db.prepare(`
+    INSERT INTO resilience_state(key, value, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at
+  `);
+  for (const [key, value] of values) stmt.run(key, value, now);
+}
+
+export function getCentralDatabaseState() {
+  const db = getLocalDb();
+  const rows = db.prepare("SELECT key, value, updated_at FROM resilience_state WHERE key IN ('database_online','database_error')").all() as Array<{ key: string; value: string; updated_at: string }>;
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  const onlineRow = byKey.get("database_online");
+  return {
+    known: Boolean(onlineRow),
+    online: onlineRow ? onlineRow.value === "1" : true,
+    error: byKey.get("database_error")?.value || "",
+    updatedAt: onlineRow?.updated_at || "",
+  };
+}
+
 export function localResilienceStatus() {
   const db = getLocalDb();
   const pending = Number((db.prepare("SELECT COUNT(*) AS count FROM sync_queue WHERE status IN ('pending','error','syncing')").get() as { count?: number } | undefined)?.count || 0);
   const snapshots = db.prepare("SELECT scope, updated_at FROM local_snapshots ORDER BY updated_at DESC").all() as Array<{ scope: string; updated_at: string }>;
-  return { enabled: true, pending, snapshots: snapshots.map((x) => ({ scope: x.scope, updatedAt: x.updated_at })) };
+  const database = getCentralDatabaseState();
+  return { enabled: true, pending, database, snapshots: snapshots.map((x) => ({ scope: x.scope, updatedAt: x.updated_at })) };
 }
 
 function pruneBackups(kind: BackupKind, keep: number) {
