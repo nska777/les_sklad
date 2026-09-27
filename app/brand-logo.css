@@ -1,0 +1,25 @@
+.brand-mark {
+  display: block !important;
+  height: 2.9rem !important;
+  width: 2.9rem !important;
+  flex: 0 0 2.9rem !important;
+  border: 0 !important;
+  border-radius: 9999px !important;
+  background: url('/brand-logo.svg') center / cover no-repeat !important;
+  box-shadow: 0 8px 22px rgb(18 100 59 / 24%) !important;
+  color: transparent !important;
+  overflow: hidden !important;
+}
+
+.brand-mark > svg,
+.brand-mark > span {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .brand-mark {
+    height: 2.65rem !important;
+    width: 2.65rem !important;
+    flex-basis: 2.65rem !important;
+  }
+}
