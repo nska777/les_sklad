@@ -4,13 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { GET as liveGet, POST as livePost } from "@/app/api/department-warehouse/route";
 import { applyDepartmentOfflineOperation } from "@/lib/department-offline";
 import {
+  claimPendingOperations,
   enqueueOperation,
-  listPendingOperations,
   loadLocalSnapshot,
   markOperationDone,
   markOperationError,
-  markOperationSyncing,
   saveLocalSnapshot,
+  setCentralDatabaseState,
 } from "@/lib/local-resilience";
 
 export const runtime = "nodejs";
@@ -47,19 +47,21 @@ async function syncPending(request: NextRequest, warehouse: string) {
   if (now - last < 15_000) return;
   syncCooldown.set(queue, now);
 
-  const pending = listPendingOperations(20).filter((item) => item.scope === queue);
+  const pending = claimPendingOperations(queue, 20);
   for (const item of pending) {
-    markOperationSyncing(item.id);
     try {
       const response = await livePost(replayRequest(request, item.payload));
       if (!response.ok) {
         const body = await response.clone().json().catch(() => ({})) as { error?: string };
         markOperationError(item.id, body.error || `HTTP ${response.status}`);
-        break;
+        setCentralDatabaseState(response.status < 500, body.error || `HTTP ${response.status}`);
+        continue;
       }
       markOperationDone(item.id, queue);
+      setCentralDatabaseState(true);
     } catch (error) {
       markOperationError(item.id, error);
+      setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
       break;
     }
   }
@@ -89,14 +91,17 @@ export async function GET(request: NextRequest) {
     const body = await response.clone().json().catch(() => null) as Record<string, unknown> | null;
     if (response.ok && body) {
       saveLocalSnapshot(snapshot, body);
+      setCentralDatabaseState(true);
       return NextResponse.json({ ...body, resilience: { mode: "online", cached: false } }, { status: response.status });
     }
+    if (response.status >= 500) setCentralDatabaseState(false, `HTTP ${response.status}`);
     const cached = loadLocalSnapshot<Record<string, unknown>>(snapshot);
     if (cached) {
       return NextResponse.json({ ...cached.payload, resilience: { mode: "offline", cached: true, snapshotAt: cached.updatedAt } });
     }
     return response;
   } catch (error) {
+    setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
     const cached = loadLocalSnapshot<Record<string, unknown>>(snapshot);
     if (cached) {
       return NextResponse.json({ ...cached.payload, resilience: { mode: "offline", cached: true, snapshotAt: cached.updatedAt } });
@@ -115,22 +120,26 @@ export async function POST(request: NextRequest) {
     try {
       await syncPending(request, warehouse);
       const response = await livePost(replayRequest(request, body));
-      if (response.status < 500) return response;
-    } catch {
-      // Центральная база недоступна — операция будет выполнена локально и поставлена в очередь.
+      if (response.status < 500) {
+        setCentralDatabaseState(true);
+        return response;
+      }
+      setCentralDatabaseState(false, `HTTP ${response.status}`);
+    } catch (error) {
+      setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
     }
   }
 
   try {
     const operationId = crypto.randomUUID();
-    const payload = { ...body, _operationId: operationId };
+    const payload = { ...body, _operationId: operationId, _operator: operator, _warehouse: warehouse };
     const result = applyDepartmentOfflineOperation(snapshot, warehouse, operator, payload);
     enqueueOperation(queue, String(body.action || "operation"), payload, operationId);
     return NextResponse.json({
       ...result,
       operationId,
       resilience: { mode: "offline", queued: true, forced: forcedOffline() },
-      message: "Операция сохранена локально и будет синхронизирована автоматически",
+      message: "Операция сохранена локально. Система синхронизирует её автоматически после восстановления базы.",
     }, { status: 202 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Операция недоступна в офлайн-режиме" }, { status: 503 });
