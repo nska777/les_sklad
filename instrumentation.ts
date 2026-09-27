@@ -1,15 +1,18 @@
-let backupTimersStarted = false;
+let backgroundTimersStarted = false;
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   try {
     const { createLocalBackup, localResilienceStatus } = await import("./lib/local-resilience");
+    const { recoverBackgroundSyncQueue, runBackgroundSyncOnce } = await import("./lib/resilience-background");
+
     localResilienceStatus();
+    recoverBackgroundSyncQueue();
     console.log("[resilience] local SQLite initialized");
 
-    if (!backupTimersStarted) {
-      backupTimersStarted = true;
+    if (!backgroundTimersStarted) {
+      backgroundTimersStarted = true;
 
       const hourlyBackup = () => {
         try {
@@ -29,13 +32,23 @@ export async function register() {
         }
       };
 
+      const sync = () => {
+        void runBackgroundSyncOnce().catch((error) => {
+          console.error("[resilience] background sync failed", error);
+        });
+      };
+
       hourlyBackup();
       dailyBackup();
+      sync();
 
+      const syncTimer = setInterval(sync, 20_000);
       const hourlyTimer = setInterval(hourlyBackup, 60 * 60 * 1000);
       const dailyTimer = setInterval(dailyBackup, 24 * 60 * 60 * 1000);
+      syncTimer.unref();
       hourlyTimer.unref();
       dailyTimer.unref();
+      console.log("[resilience] automatic background sync started (20s interval)");
     }
   } catch (error) {
     console.error("[resilience] failed to initialize local SQLite", error);
