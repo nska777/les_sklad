@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
+import { sql } from "drizzle-orm";
+import { getDb } from "@/db";
 import {
   claimPendingOperations,
   markOperationDone,
@@ -28,6 +30,18 @@ function headersFor(operator: string, warehouse: string) {
     "x-warehouse-user": encodeURIComponent(operator || "Кладовщик"),
     "x-warehouse-code": warehouse,
   });
+}
+
+async function probeCentralDatabase() {
+  try {
+    const db = await getDb();
+    await db.execute(sql`SELECT 1`);
+    setCentralDatabaseState(true);
+    return true;
+  } catch (error) {
+    setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
+    return false;
+  }
 }
 
 async function replayHardware() {
@@ -126,6 +140,8 @@ export async function runBackgroundSyncOnce() {
   if (loopRunning || forcedOffline()) return;
   loopRunning = true;
   try {
+    const online = await probeCentralDatabase();
+    if (!online) return;
     await replayHardware();
     await replayDepartment("paint");
     await replayDepartment("ldsp");
