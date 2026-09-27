@@ -42,13 +42,14 @@ export async function register() {
       dailyBackup();
       sync();
 
-      const syncTimer = setInterval(sync, 30_000);
+      const syncIntervalMs = Math.max(30_000, Number(process.env.DB_SYNC_INTERVAL_MS || 60_000));
+      const syncTimer = setInterval(sync, syncIntervalMs);
       const hourlyTimer = setInterval(hourlyBackup, 60 * 60 * 1000);
       const dailyTimer = setInterval(dailyBackup, 24 * 60 * 60 * 1000);
       syncTimer.unref();
       hourlyTimer.unref();
       dailyTimer.unref();
-      console.log("[resilience] automatic background sync started (30s interval)");
+      console.log(`[resilience] automatic background sync started (${Math.round(syncIntervalMs / 1000)}s interval)`);
     }
   } catch (error) {
     console.error("[resilience] failed to initialize local SQLite", error);
