@@ -38,6 +38,7 @@ type Snapshot = {
 };
 
 type ModalMode = "contents" | "add" | "move" | "adjust" | "history";
+type CameraState = { position: [number, number, number]; target: [number, number, number] };
 
 function labelSprite(text: string, accent = false, scale = 1) {
   const canvas = document.createElement("canvas");
@@ -106,6 +107,7 @@ export function DepartmentRoomThreeView({
   onCellClick: (cell: Cell) => void; onRackClick: (rack: Rack) => void; onClearSelection: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const cameraStateRef = useRef<CameraState | null>(null);
   const [activeCell, setActiveCell] = useState<Cell | null>(null);
   const [mode, setMode] = useState<ModalMode>("contents");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -177,10 +179,21 @@ export function DepartmentRoomThreeView({
     const centerX = placements.length ? placements.reduce((s, p) => s + p.x, 0) / placements.length : 0;
     const centerZ = placements.length ? placements.reduce((s, p) => s + p.z, 0) / placements.length : 0;
     const center = new THREE.Vector3(centerX, 2.2, centerZ);
-    const camera = new THREE.PerspectiveCamera(46, 1, .1, 140); camera.position.set(center.x + 13, center.y + 10, center.z + 17); camera.lookAt(center);
+    const camera = new THREE.PerspectiveCamera(46, 1, .1, 140);
+    const savedCamera = cameraStateRef.current;
+    if (savedCamera) camera.position.fromArray(savedCamera.position);
+    else camera.position.set(center.x, center.y + 2.8, center.z + 18);
+    camera.lookAt(savedCamera ? new THREE.Vector3(...savedCamera.target) : center);
     const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.shadowMap.enabled = true; renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.style.width = "100%"; renderer.domElement.style.height = "100%"; renderer.domElement.style.cursor = "pointer"; host.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.copy(center); controls.maxPolarAngle = Math.PI / 2.02; controls.enablePan = true;
+    const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.copy(savedCamera ? new THREE.Vector3(...savedCamera.target) : center); controls.maxPolarAngle = Math.PI / 2.02; controls.enablePan = true;
+    const rememberCamera = () => {
+      cameraStateRef.current = {
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        target: [controls.target.x, controls.target.y, controls.target.z],
+      };
+    };
+    controls.addEventListener("change", rememberCamera);
     scene.add(new THREE.HemisphereLight(0xffffff, 0x64748b, 2.2));
     const key = new THREE.DirectionalLight(0xffffff, 3.2); key.position.set(center.x + 10, 16, center.z + 10); key.castShadow = true; scene.add(key);
     const roomFloor = new THREE.Mesh(new THREE.PlaneGeometry(42, 32), new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: .94 })); roomFloor.rotation.x = -Math.PI / 2; roomFloor.position.set(center.x, 0, center.z); roomFloor.receiveShadow = true; scene.add(roomFloor);
@@ -272,7 +285,10 @@ export function DepartmentRoomThreeView({
     const resize = () => { const w = Math.max(320, host.clientWidth), h = Math.max(640, host.clientHeight); camera.aspect = w / h; camera.updateProjectionMatrix(); renderer.setSize(w, h, false); };
     const observer = new ResizeObserver(resize); observer.observe(host); resize(); let frame = 0;
     const animate = () => { controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(animate); }; animate();
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); renderer.domElement.removeEventListener("pointerdown", onDown); renderer.domElement.removeEventListener("pointerup", onUp); controls.dispose(); scene.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose()); else o.material.dispose(); } if (o instanceof THREE.Sprite) { o.material.map?.dispose(); o.material.dispose(); } }); renderer.dispose(); host.innerHTML = ""; };
+    return () => {
+      rememberCamera();
+      cancelAnimationFrame(frame); observer.disconnect(); renderer.domElement.removeEventListener("pointerdown", onDown); renderer.domElement.removeEventListener("pointerup", onUp); controls.removeEventListener("change", rememberCamera); controls.dispose(); scene.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose()); else o.material.dispose(); } if (o instanceof THREE.Sprite) { o.material.map?.dispose(); o.material.dispose(); } }); renderer.dispose(); host.innerHTML = "";
+    };
   }, [racks, cells, viewStocks, selectedCellId, selectedRackId, onRackClick, onClearSelection, openCell]);
 
   const submitAdd = async (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); if (!activeCell || !addProductId) return; const form = new FormData(e.currentTarget); await post({ action: "receive", productId: addProductId, cellId: activeCell.id, quantity: form.get("quantity"), documentNumber: "3D-РАЗМЕЩЕНИЕ", sourceName: "Размещение", sourceLocation: activeCell.code, comment: "Добавлено из карточки ячейки" }, "Материал размещён"); setMode("contents"); };
