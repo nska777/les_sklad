@@ -69,6 +69,13 @@ export async function proxy(request: NextRequest) {
   headers.set("x-warehouse-role", session.role);
   headers.set("x-warehouse-code", session.warehouse);
   headers.set("x-warehouse-access", session.warehouses.join(","));
+
+  if (pathname === "/api/department-warehouse" && (request.method === "GET" || request.method === "HEAD")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/api/department-warehouse-resilient";
+    return NextResponse.rewrite(url, { request: { headers } });
+  }
+
   return NextResponse.next({ request: { headers } });
 }
 
