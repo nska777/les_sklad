@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { FileSpreadsheet, TriangleAlert } from "lucide-react";
 import WarehouseFullUiV4 from "./warehouse-full-ui-v4";
 import { WarehouseExcelToolsV2 } from "./warehouse-excel-tools-v2";
+import { DepartmentAuditPanel } from "./department-audit-panel";
 
 export default function WarehouseFullUiV5() {
   const params = useParams<{ warehouse: string }>();
@@ -53,6 +54,7 @@ export default function WarehouseFullUiV5() {
   return <>
     <WarehouseFullUiV4 />
     <WarehouseExcelToolsV2 />
+    <DepartmentAuditPanel />
     {mount ? createPortal(buttons, mount) : null}
   </>;
 }
