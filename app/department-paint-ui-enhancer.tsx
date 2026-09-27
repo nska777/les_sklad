@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { createRoot, Root } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,7 +71,7 @@ function SmartReceipt() {
     finally { setSaving(false); }
   };
 
-  return <form onSubmit={submit} className="panel p-6">
+  return <form data-smart-receipt="1" onSubmit={submit} className="panel p-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="text-xl font-black">Приход и оприходование</h2><p className="mt-1 text-sm text-slate-500">Документ обязателен. Материал можно выбрать из базы или создать новый. Разместить по ячейке можно сразу или позже.</p></div>
       <span className="rounded-full bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700">Фактический приход</span>
@@ -145,10 +145,9 @@ export function DepartmentPaintUiEnhancer() {
   useEffect(() => {
     if (!window.location.pathname.startsWith("/department/paint")) return;
     const enhance = () => {
-      // Replace the old receipt form with the redesigned, optional-placement form.
       document.querySelectorAll<HTMLFormElement>("form").forEach((form) => {
         if (form.querySelector("h2")?.textContent?.trim() !== "Приход и оприходование") return;
-        if (form.dataset.smartReceipt === "1") return;
+        if (form.dataset.smartReceipt === "1" || form.closest('[data-smart-receipt-host="1"]')) return;
         form.dataset.smartReceipt = "1";
         form.style.display = "none";
         const host = document.createElement("div");
@@ -157,7 +156,6 @@ export function DepartmentPaintUiEnhancer() {
         const root = createRoot(host); mounted.set(host, root); root.render(<SmartReceipt />);
       });
 
-      // Materials: no checkboxes, newest first, mark fresh records, add a quiet Edit button.
       document.querySelectorAll("table").forEach((table) => {
         const headers = Array.from(table.querySelectorAll("thead th"));
         if (!headers.some((h) => h.textContent?.trim() === "Материал") || !headers.some((h) => h.textContent?.includes("Штрихкод"))) return;
@@ -190,8 +188,10 @@ export function DepartmentPaintUiEnhancer() {
         });
         const body = table.querySelector("tbody");
         if (body && sortable.some((x) => x.product)) {
-          sortable.sort((a, b) => new Date(b.product?.createdAt || 0).getTime() - new Date(a.product?.createdAt || 0).getTime());
-          sortable.forEach(({ row }) => body.appendChild(row));
+          const sorted = [...sortable].sort((a, b) => new Date(b.product?.createdAt || 0).getTime() - new Date(a.product?.createdAt || 0).getTime()).map((x) => x.row);
+          const current = Array.from(body.children);
+          const changed = sorted.length === current.length && sorted.some((row, index) => row !== current[index]);
+          if (changed) sorted.forEach((row) => body.appendChild(row));
         }
       });
     };
