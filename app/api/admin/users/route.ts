@@ -6,9 +6,15 @@ import { hashPassword } from "@/lib/passwords";
 import { allWarehouseCodes, isWarehouseCode, warehouseName, type WarehouseCode, type WarehouseRole } from "@/lib/warehouse-auth";
 
 const roles: WarehouseRole[] = ["admin", "manager", "storekeeper", "viewer"];
+const limitedAccessAdmin = "mikhail";
+const protectedUsernames = new Set(["artashes", "roman"]);
 
 function requireAdmin(request: NextRequest) {
   return request.headers.get("x-warehouse-role") === "admin";
+}
+
+function actorUsername(request: NextRequest) {
+  return String(request.headers.get("x-warehouse-username") || "").trim().toLowerCase();
 }
 
 function parseWarehouses(value: unknown, role: WarehouseRole): WarehouseCode[] {
@@ -36,7 +42,15 @@ export async function GET(request: NextRequest) {
     active: warehouseUsers.active,
     createdAt: warehouseUsers.createdAt,
   }).from(warehouseUsers).orderBy(warehouseUsers.name);
-  return NextResponse.json({ users: users.map((user) => ({ ...user, warehouses: storedWarehouses(user.warehouseCode, user.role) })) });
+  const actor = actorUsername(request);
+  return NextResponse.json({
+    users: users.map((user) => ({ ...user, warehouses: storedWarehouses(user.warehouseCode, user.role) })),
+    permissions: {
+      canCreateUsers: actor !== limitedAccessAdmin,
+      accessOnly: actor === limitedAccessAdmin,
+      protectedUsernames: actor === limitedAccessAdmin ? Array.from(protectedUsernames) : [],
+    },
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -44,9 +58,14 @@ export async function POST(request: NextRequest) {
   const db = await getDb();
   const body = await request.json() as Record<string, unknown>;
   const action = String(body.action || "create");
+  const actor = actorUsername(request);
   const operator = decodeURIComponent(request.headers.get("x-warehouse-user") || "Администратор");
+  const accessOnly = actor === limitedAccessAdmin;
 
   if (action === "create") {
+    if (accessOnly) {
+      return NextResponse.json({ error: "У вас нет права создавать новых пользователей" }, { status: 403 });
+    }
     const username = String(body.username || "").trim().toLowerCase();
     const name = String(body.name || "").trim();
     const password = String(body.password || "");
@@ -66,15 +85,39 @@ export async function POST(request: NextRequest) {
 
   if (action === "update") {
     const id = String(body.id || "");
+    if (!id) return NextResponse.json({ error: "Некорректные данные" }, { status: 400 });
+
+    const [current] = await db.select().from(warehouseUsers).where(eq(warehouseUsers.id, id)).limit(1);
+    if (!current) return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
+
+    if (accessOnly) {
+      const targetUsername = current.username.trim().toLowerCase();
+      if (protectedUsernames.has(targetUsername)) {
+        return NextResponse.json({ error: "Доступы Artashes и Roman может изменять только полный администратор" }, { status: 403 });
+      }
+      if (current.role === "admin") {
+        return NextResponse.json({ error: "Администратору доступ ко всем складам назначается автоматически" }, { status: 409 });
+      }
+      const warehouses = parseWarehouses(body.warehouses ?? body.warehouseCode, current.role as WarehouseRole);
+      await db.update(warehouseUsers).set({ warehouseCode: warehouses.join(",") }).where(eq(warehouseUsers.id, id));
+      await db.insert(activityLogs).values({
+        id: crypto.randomUUID(),
+        action: "Изменён доступ к складам",
+        entityType: "Пользователь",
+        entityId: id,
+        entityName: current.name,
+        details: `${current.username} · ${warehouses.map(warehouseName).join(" / ")}`,
+        operator,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     const name = String(body.name || "").trim();
     const role = String(body.role || "storekeeper") as WarehouseRole;
     const active = Boolean(body.active);
     const password = String(body.password || "");
-    if (!id || !name || !roles.includes(role)) return NextResponse.json({ error: "Некорректные данные" }, { status: 400 });
+    if (!name || !roles.includes(role)) return NextResponse.json({ error: "Некорректные данные" }, { status: 400 });
     const warehouses = parseWarehouses(body.warehouses ?? body.warehouseCode, role);
-
-    const [current] = await db.select().from(warehouseUsers).where(eq(warehouseUsers.id, id)).limit(1);
-    if (!current) return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
 
     if (current.role === "admin" && current.active && (role !== "admin" || !active)) {
       const result = await db.execute(sql`SELECT COUNT(*)::int AS count FROM warehouse_users WHERE role = 'admin' AND active = true`);
