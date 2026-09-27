@@ -10,9 +10,11 @@ export async function GET() {
   const dataDir = process.env.LOCAL_WAREHOUSE_DATA_DIR || "/opt/russian-forest-sklad/data";
   const forced = process.env.WAREHOUSE_FORCE_OFFLINE === "1" || existsSync(join(dataDir, "FORCE_OFFLINE_TEST"));
   const status = localResilienceStatus();
+  const databaseOffline = status.database.known && !status.database.online;
+
   return NextResponse.json({
     ...status,
-    mode: forced ? "offline" : status.pending > 0 ? "syncing" : "online",
+    mode: forced || databaseOffline ? "offline" : status.pending > 0 ? "syncing" : "online",
     forced,
   });
 }
