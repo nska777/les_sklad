@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Русский лес">
+  <circle cx="256" cy="256" r="248" fill="#12643b"/>
+  <g fill="#fff">
+    <path d="M128 111l36 52h-20l31 43h-21l27 39h-22l25 35h-37v83h-24v-83H86l26-35H90l28-39H98l31-43h-21l20-52z"/>
+    <path d="M118 258h22v104h-22z"/>
+    <text x="190" y="213" font-size="55" font-weight="700" font-family="Georgia, 'Times New Roman', serif" letter-spacing="1">РУССКИЙ</text>
+    <text x="190" y="282" font-size="69" font-weight="700" font-family="Georgia, 'Times New Roman', serif" letter-spacing="2">ЛЕС</text>
+    <text x="190" y="334" font-size="23" font-weight="600" font-family="Arial, sans-serif" letter-spacing="7">ФАБРИКА МЕБЕЛИ</text>
+  </g>
+</svg>
