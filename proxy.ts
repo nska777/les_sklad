@@ -71,8 +71,11 @@ export async function proxy(request: NextRequest) {
   headers.set("x-warehouse-access", session.warehouses.join(","));
 
   if (pathname === "/api/department-warehouse") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/api/department-warehouse-resilient";
+    // Standalone Next.js on production listens on plain HTTP at 127.0.0.1:3000.
+    // Using request.nextUrl here inherited the external HTTPS scheme and made Next
+    // try to TLS-proxy to the local HTTP server (EPROTO / wrong version number).
+    const url = new URL("http://127.0.0.1:3000/api/department-warehouse-resilient");
+    url.search = request.nextUrl.search;
     return NextResponse.rewrite(url, { request: { headers } });
   }
 
