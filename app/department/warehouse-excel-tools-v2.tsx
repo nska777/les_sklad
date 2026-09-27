@@ -2,21 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, FileSpreadsheet, RefreshCw, Trash2 } from "lucide-react";
+import { CalendarDays, Download, FileSpreadsheet, Pencil, RefreshCw, Save, Trash2, UserRound, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 
-type Rack = { id: string; code: string; name: string; storageType: string };
-type Cell = { id: string; rackId: string; code: string; rowIndex?: number };
-type Product = { id: string; name: string; sku: string; barcode: string; oneCId?: string | null; category: string; unit: string };
-type Stock = { productId: string; cellId: string; quantity: number };
-type Movement = { id: string; type: string; productId: string; productName: string; productSku: string; productUnit: string; fromCellCode: string; toCellCode: string; quantity: number; recipient: string; comment: string; operator: string; documentNumber: string; sourceName: string; sourceLocation: string; createdAt: string };
-type Inventory = { id: string; createdBy: string; createdAt: string; snapshotJson: string };
-type InventoryRow = { productId?: string; name?: string; sku?: string; unit?: string; cellId?: string; cellCode?: string; quantity?: number };
-type Snapshot = { racks: Rack[]; cells: Cell[]; products: Product[]; stocks: Stock[]; movements: Movement[]; inventories: Inventory[]; error?: string };
+ type Rack = { id: string; code: string; name: string; storageType: string };
+ type Cell = { id: string; rackId: string; code: string; rowIndex?: number };
+ type Product = { id: string; name: string; sku: string; barcode: string; oneCId?: string | null; category: string; unit: string };
+ type Stock = { productId: string; cellId: string; quantity: number };
+ type Movement = { id: string; type: string; productId: string; productName: string; productSku: string; productUnit: string; fromCellCode: string; toCellCode: string; quantity: number; recipient: string; comment: string; operator: string; documentNumber: string; sourceName: string; sourceLocation: string; createdAt: string };
+ type Inventory = { id: string; createdBy: string; createdAt: string; snapshotJson: string };
+ type InventoryRow = { productId?: string; name?: string; sku?: string; unit?: string; cellId?: string; cellCode?: string; quantity?: number };
+ type Snapshot = { racks: Rack[]; cells: Cell[]; products: Product[]; stocks: Stock[]; movements: Movement[]; inventories: Inventory[]; error?: string };
 
-const fmt = (value: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 9 }).format(value);
 const dateText = (value: string) => new Date(value).toLocaleString("ru-RU");
 const fileStamp = () => new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-");
 
@@ -46,6 +45,9 @@ export function WarehouseExcelToolsV2() {
   const [activeTab, setActiveTab] = useState("");
   const [mount, setMount] = useState<HTMLElement | null>(null);
   const [busyId, setBusyId] = useState("");
+  const [currentUsername, setCurrentUsername] = useState("");
+  const [editing, setEditing] = useState<Inventory | null>(null);
+  const [editRows, setEditRows] = useState<InventoryRow[]>([]);
   const mountRef = useRef<HTMLElement | null>(null);
   const panelRef = useRef<Element | null>(null);
   const hiddenInventoryRef = useRef<HTMLElement | null>(null);
@@ -59,6 +61,18 @@ export function WarehouseExcelToolsV2() {
   }, []);
 
   useEffect(() => { void load().catch(() => undefined); }, [load]);
+  useEffect(() => {
+    void fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => r.json() as Promise<{ user?: { username?: string } }>)
+      .then((body) => setCurrentUsername(String(body.user?.username || "").toLowerCase()))
+      .catch(() => setCurrentUsername(""));
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "Инвентаризация") return;
+    const timer = window.setInterval(() => { void load().catch(() => undefined); }, 1500);
+    return () => window.clearInterval(timer);
+  }, [activeTab, load]);
 
   useEffect(() => {
     const sync = () => {
@@ -148,6 +162,7 @@ export function WarehouseExcelToolsV2() {
   };
 
   const inventories = useMemo(() => data?.inventories || [], [data]);
+  const canManageInventory = currentUsername === "roman" || currentUsername === "artashes";
 
   const exportInventory = (item: Inventory) => {
     const rows = parseInventory(item);
@@ -181,17 +196,85 @@ export function WarehouseExcelToolsV2() {
     finally { setBusyId(""); }
   };
 
+  const openEdit = (item: Inventory) => {
+    setEditing(item);
+    setEditRows(parseInventory(item).map((row) => ({ ...row })));
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setBusyId(editing.id);
+    try {
+      const response = await fetch("/api/department-warehouse-inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", id: editing.id, rows: editRows }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || "Не удалось сохранить инвентаризацию");
+      setEditing(null);
+      await load();
+      toast.success("Инвентаризация обновлена");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Не удалось сохранить"); }
+    finally { setBusyId(""); }
+  };
+
   if (!mount) return null;
 
   const excelButton = (label: string, action: () => void) => <Button type="button" variant="outline" size="sm" className="border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100" onClick={action}><FileSpreadsheet size={15}/> {label}</Button>;
 
-  return createPortal(<div className="space-y-3">
+  const portal = createPortal(<div className="space-y-3">
     <div className="flex flex-wrap items-center gap-2">
       {activeTab === "Склад" && excelButton("Скачать Excel склада", () => void exportStorage())}
       {activeTab === "Приход" && excelButton("Скачать Excel приходов", () => void exportMovements("receipt"))}
       {activeTab === "Выдача" && excelButton("Скачать Excel выдач", () => void exportMovements("issue"))}
-      {activeTab === "Инвентаризация" && <>{excelButton("Скачать все инвентаризации", exportAllInventories)}<Button type="button" variant="outline" size="sm" onClick={() => void load()}><RefreshCw size={15}/> Обновить</Button></>}
+      {activeTab === "Инвентаризация" && <>
+        {excelButton("Скачать все инвентаризации", exportAllInventories)}
+        <Button type="button" variant="outline" size="sm" onClick={() => void load()}><RefreshCw size={15}/> Обновить</Button>
+      </>}
     </div>
-    {activeTab === "Инвентаризация" && <div className="space-y-2">{inventories.map((item) => { const rows = parseInventory(item); return <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white p-3"><div><b>{dateText(item.createdAt)}</b><div className="text-xs text-slate-500">Снял: {item.createdBy} · позиций: {rows.length}</div></div><div className="flex gap-2"><Button type="button" size="sm" variant="outline" className="text-emerald-700" onClick={() => exportInventory(item)}><Download size={14}/> Excel</Button><Button type="button" size="sm" variant="outline" className="text-red-600" disabled={busyId === item.id} onClick={() => void deleteInventory(item)}><Trash2 size={14}/> {busyId === item.id ? "Удаление..." : "Удалить"}</Button></div></div>; })}{!inventories.length && <div className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-400">Снимков остатков пока нет</div>}</div>}
+
+    {activeTab === "Инвентаризация" && <div className="grid gap-3">
+      {inventories.map((item) => {
+        const rows = parseInventory(item);
+        const locations = new Set(rows.map((row) => row.cellId || row.cellCode).filter(Boolean)).size;
+        return <div key={item.id} className="rounded-2xl border bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><CalendarDays size={18}/></span>
+                <div><div className="font-black text-slate-900">Инвентаризация · {dateText(item.createdAt)}</div><div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-slate-500"><span className="inline-flex items-center gap-1"><UserRound size={13}/> {item.createdBy}</span><span>Позиций: <b className="text-slate-700">{rows.length}</b></span><span>Мест хранения: <b className="text-slate-700">{locations}</b></span></div></div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100" onClick={() => exportInventory(item)}><Download size={14}/> Excel остатков</Button>
+              {canManageInventory && <Button type="button" size="sm" variant="outline" onClick={() => openEdit(item)}><Pencil size={14}/> Редактировать</Button>}
+              {canManageInventory && <Button type="button" size="sm" variant="outline" className="text-red-600" disabled={busyId === item.id} onClick={() => void deleteInventory(item)}><Trash2 size={14}/> {busyId === item.id ? "Удаление..." : "Удалить"}</Button>}
+            </div>
+          </div>
+          <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">Excel прикреплён к этому снимку логически: кнопка формирует файл именно по остаткам, зафиксированным в указанную дату и время, а не по текущему складу.</div>
+        </div>;
+      })}
+      {!inventories.length && <div className="rounded-2xl border border-dashed bg-white/70 p-8 text-center text-sm text-slate-400">Инвентаризаций пока нет. Нажмите «Зафиксировать остатки сейчас» — снимок сразу появится здесь.</div>}
+    </div>}
   </div>, mount);
+
+  return <>
+    {portal}
+    {editing && createPortal(<div className="fixed inset-0 z-[50000] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) setEditing(null); }}>
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[28px] border bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b p-5 sm:p-6">
+          <div><div className="text-xs font-black uppercase tracking-[.14em] text-blue-600">Редактирование снимка</div><h2 className="mt-1 text-2xl font-black">Инвентаризация · {dateText(editing.createdAt)}</h2><p className="mt-1 text-sm text-slate-500">Меняются только данные сохранённого снимка. Текущие остатки склада это действие не изменяет.</p></div>
+          <button type="button" onClick={() => setEditing(null)} className="rounded-xl p-2 hover:bg-slate-100"><X/></button>
+        </div>
+        <div className="max-h-[60vh] overflow-auto p-4 sm:p-6">
+          <div className="space-y-2">{editRows.map((row, index) => <div key={`${row.productId || row.name}-${row.cellId || row.cellCode}-${index}`} className="grid gap-3 rounded-xl border p-3 sm:grid-cols-[1fr_180px] sm:items-center">
+            <div className="min-w-0"><div className="truncate font-bold">{row.name || "Материал"}</div><div className="mt-0.5 text-xs text-slate-500">{row.sku || "без артикула"} · {row.cellCode || "без ячейки"} · {row.unit || ""}</div></div>
+            <label className="text-xs font-semibold text-slate-600">Количество<input type="number" min="0" step="0.000000001" value={Number(row.quantity || 0)} onChange={(e) => setEditRows((current) => current.map((x, i) => i === index ? { ...x, quantity: Math.max(0, Number(e.target.value) || 0) } : x))} className="mt-1 h-10 w-full rounded-xl border px-3 text-sm outline-none focus:border-blue-500"/></label>
+          </div>)}</div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t bg-slate-50 p-4 sm:p-5"><Button type="button" variant="outline" onClick={() => setEditing(null)}>Отмена</Button><Button type="button" className="bg-blue-600 text-white hover:bg-blue-700" disabled={busyId === editing.id} onClick={() => void saveEdit()}><Save size={15}/> {busyId === editing.id ? "Сохранение..." : "Сохранить изменения"}</Button></div>
+      </div>
+    </div>, document.body)}
+  </>;
 }
