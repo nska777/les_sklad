@@ -15,6 +15,7 @@ import { PageTitleController } from "@/app/page-title-controller";
 import { HidePrimaryInventory } from "@/app/hide-primary-inventory";
 import { ResilienceIndicator } from "@/app/resilience-indicator";
 import "./globals.css";
+import "./select-arrows.css";
 
 export const metadata: Metadata = {
   title: "Склад",
