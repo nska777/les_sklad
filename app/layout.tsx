@@ -14,6 +14,7 @@ import { RackVisualAddCellHelper } from "@/app/rack-visual-add-cell-helper";
 import { PageTitleController } from "@/app/page-title-controller";
 import { HidePrimaryInventory } from "@/app/hide-primary-inventory";
 import { ResilienceIndicator } from "@/app/resilience-indicator";
+import { DepartmentManualProductEnhancer } from "@/app/department-manual-product-enhancer";
 import "./globals.css";
 import "./select-arrows.css";
 
@@ -46,6 +47,7 @@ export default function RootLayout({
         <NewTabPageLinks />
         <RackTabRouter />
         <ResilienceIndicator />
+        <DepartmentManualProductEnhancer />
         {children}
         <MaterialsAddAction />
         <IssueMobileScanTools />
