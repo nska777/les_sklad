@@ -1,8 +1,9 @@
 import { mkdirSync, copyFileSync, existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type SyncStatus = "pending" | "syncing" | "done" | "error";
+export type BackupKind = "hourly" | "daily";
 
 export type QueuedOperation = {
   id: string;
@@ -16,17 +17,13 @@ export type QueuedOperation = {
   syncedAt: string;
 };
 
-const persistentProjectRoot = process.env.WAREHOUSE_PROJECT_ROOT || "/opt/russian-forest-sklad";
-const defaultDataDir = process.env.NODE_ENV === "production" && existsSync(persistentProjectRoot)
-  ? join(persistentProjectRoot, "data")
-  : join(process.cwd(), "data");
-const dataDir = process.env.LOCAL_WAREHOUSE_DATA_DIR || defaultDataDir;
+const dataDir = process.env.LOCAL_WAREHOUSE_DATA_DIR || (process.env.NODE_ENV === "production" ? "/opt/russian-forest-sklad/data" : join(process.cwd(), "data"));
 const dbPath = process.env.LOCAL_WAREHOUSE_DB || join(dataDir, "warehouse-local.sqlite");
 const backupDir = join(dataDir, "backups");
 let localDb: DatabaseSync | null = null;
 
 function ensureDirs() {
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dirname(dbPath), { recursive: true });
   mkdirSync(backupDir, { recursive: true });
 }
 
@@ -142,21 +139,26 @@ export function localResilienceStatus() {
   const db = getLocalDb();
   const pending = Number((db.prepare("SELECT COUNT(*) AS count FROM sync_queue WHERE status IN ('pending','error','syncing')").get() as { count?: number } | undefined)?.count || 0);
   const snapshots = db.prepare("SELECT scope, updated_at FROM local_snapshots ORDER BY updated_at DESC").all() as Array<{ scope: string; updated_at: string }>;
-  return { enabled: true, pending, snapshots: snapshots.map((x) => ({ scope: x.scope, updatedAt: x.updated_at })), dbPath };
+  return { enabled: true, pending, snapshots: snapshots.map((x) => ({ scope: x.scope, updatedAt: x.updated_at })) };
 }
 
-export function createLocalBackup() {
+function pruneBackups(kind: BackupKind, keep: number) {
+  const prefix = `warehouse-local-${kind}-`;
+  const files = readdirSync(backupDir)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(".sqlite"))
+    .map((name) => ({ name, path: join(backupDir, name), mtime: statSync(join(backupDir, name)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
+  for (const old of files.slice(keep)) unlinkSync(old.path);
+}
+
+export function createLocalBackup(kind: BackupKind = "hourly") {
   ensureDirs();
   if (!existsSync(dbPath)) return null;
   const db = getLocalDb();
   db.exec("PRAGMA wal_checkpoint(FULL)");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const target = join(backupDir, `warehouse-local-${stamp}.sqlite`);
+  const target = join(backupDir, `warehouse-local-${kind}-${stamp}.sqlite`);
   copyFileSync(dbPath, target);
-  const files = readdirSync(backupDir)
-    .filter((name) => name.startsWith("warehouse-local-") && name.endsWith(".sqlite"))
-    .map((name) => ({ name, path: join(backupDir, name), mtime: statSync(join(backupDir, name)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-  for (const old of files.slice(48)) unlinkSync(old.path);
+  pruneBackups(kind, kind === "hourly" ? 48 : 30);
   return target;
 }
