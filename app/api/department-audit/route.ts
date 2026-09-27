@@ -9,6 +9,22 @@ export const dynamic = "force-dynamic";
 const clean = (value: unknown) => String(value ?? "").trim();
 const safeObject = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
+const canonicalAction = (action: string) => {
+  const value = clean(action);
+  const map: Record<string, { label: string; category: string }> = {
+    productCreated: { label: "Создание материала", category: "Материалы" },
+    productUpdated: { label: "Редактирование материала", category: "Материалы" },
+    productDeleted: { label: "Удаление материала", category: "Удаления" },
+    rackCreated: { label: "Создание стеллажа", category: "Стеллажи" },
+    rackUpdated: { label: "Редактирование стеллажа", category: "Стеллажи" },
+    rackDeleted: { label: "Удаление стеллажа", category: "Удаления" },
+    inventoryCreated: { label: "Инвентаризация", category: "Инвентаризация" },
+    inventoryUpdated: { label: "Редактирование инвентаризации", category: "Инвентаризация" },
+    inventoryDeleted: { label: "Удаление инвентаризации", category: "Удаления" },
+  };
+  return map[value] || null;
+};
+
 const actionMeta = (action: string, endpoint: string) => {
   const inventory = endpoint.includes("department-warehouse-inventory");
   const map: Record<string, { label: string; category: string; entityType: string }> = {
@@ -57,23 +73,37 @@ export async function GET(request: NextRequest) {
     const [logs, movements, products, cells] = await Promise.all([
       db.select().from(activityLogs).where(like(activityLogs.entityType, `department:${ctx.code}:%`)).orderBy(desc(activityLogs.createdAt)).limit(1000),
       db.select().from(departmentMovements).where(eq(departmentMovements.warehouseCode, ctx.code)).orderBy(desc(departmentMovements.createdAt)).limit(700),
-      db.select({ id: departmentProducts.id, name: departmentProducts.name, sku: departmentProducts.sku, unit: departmentProducts.unit }).from(departmentProducts).where(eq(departmentProducts.warehouseCode, ctx.code)),
+      db.select({ id: departmentProducts.id, name: departmentProducts.name, sku: departmentProducts.sku, unit: departmentProducts.unit, category: departmentProducts.category, brand: departmentProducts.brand, color: departmentProducts.color, ral: departmentProducts.ral, packType: departmentProducts.packType, packSize: departmentProducts.packSize, minStock: departmentProducts.minStock, comment: departmentProducts.comment }).from(departmentProducts).where(eq(departmentProducts.warehouseCode, ctx.code)),
       db.select({ id: departmentCells.id, code: departmentCells.code }).from(departmentCells).where(eq(departmentCells.warehouseCode, ctx.code)),
     ]);
     const productById = new Map(products.map((p) => [p.id, p]));
     const cellById = new Map(cells.map((c) => [c.id, c.code]));
-    const auditRows = logs.map((row) => {
+
+    const rawAuditRows = logs.map((row) => {
       let details: Record<string, unknown> = {};
       try { details = JSON.parse(row.details || "{}") as Record<string, unknown>; } catch { details = { text: row.details }; }
+      const canonical = canonicalAction(row.action);
+      const product = productById.get(row.entityId);
+      const detailParts = [clean(details.summary) || clean(details.text)];
+      if (product && canonical?.label === "Создание материала") {
+        detailParts.push(`Артикул: ${product.sku}`);
+        detailParts.push(`Ед.: ${product.unit}`);
+        if (product.category) detailParts.push(`Категория: ${product.category}`);
+        if (product.brand) detailParts.push(`Бренд: ${product.brand}`);
+        if (product.color) detailParts.push(`Цвет: ${product.color}`);
+        if (product.ral) detailParts.push(`RAL: ${product.ral}`);
+        if (product.packType) detailParts.push(`Тара: ${product.packType}${Number(product.packSize) > 0 ? ` ${Number(product.packSize).toLocaleString("ru-RU", { maximumFractionDigits: 9 })} ${product.unit}` : ""}`);
+        if (Number(product.minStock) > 0) detailParts.push(`Мин. остаток: ${Number(product.minStock).toLocaleString("ru-RU", { maximumFractionDigits: 9 })} ${product.unit}`);
+      }
       return {
         id: row.id,
         source: "audit",
-        action: row.action,
-        category: clean(details.category) || "Прочее",
+        action: canonical?.label || row.action,
+        category: canonical?.category || clean(details.category) || "Прочее",
         entityType: row.entityType.split(":").slice(2).join(":") || "warehouse",
         entityId: row.entityId,
         entityName: row.entityName,
-        details: clean(details.summary) || clean(details.text),
+        details: detailParts.filter(Boolean).join(" · "),
         quantity: clean(details.quantity),
         route: clean(details.route),
         document: clean(details.document),
@@ -82,8 +112,18 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    const auditRows = rawAuditRows.filter((row, index, rows) => {
+      const duplicateIndex = rows.findIndex((other) => {
+        if (other.action !== row.action || other.operator !== row.operator || other.entityName !== row.entityName) return false;
+        const delta = Math.abs(new Date(other.createdAt).getTime() - new Date(row.createdAt).getTime());
+        return delta < 12_000;
+      });
+      return duplicateIndex === index;
+    });
+
     const isDuplicate = (movement: typeof movements[number]) => auditRows.some((row) => {
-      if (row.entityId !== movement.productId) return false;
+      const product = productById.get(movement.productId);
+      if (row.entityId !== movement.productId && row.entityName !== product?.name) return false;
       const delta = Math.abs(new Date(row.createdAt).getTime() - new Date(movement.createdAt).getTime());
       return delta < 10_000 && row.operator === movement.operator;
     });
@@ -92,15 +132,17 @@ export async function GET(request: NextRequest) {
       const product = productById.get(m.productId);
       const from = m.fromCellId ? cellById.get(m.fromCellId) || "" : "";
       const to = m.toCellId ? cellById.get(m.toCellId) || "" : "";
+      const rawType = clean(m.type);
+      const action = /выда|спис/i.test(rawType) ? "Выдача" : /перем/i.test(rawType) ? "Перемещение" : /размещ/i.test(rawType) ? "Размещение" : "Приход";
       return {
         id: `movement:${m.id}`,
         source: "movement",
-        action: m.type,
-        category: /выда|спис/i.test(m.type) ? "Выдача" : /перем/i.test(m.type) ? "Перемещение" : "Приход",
+        action,
+        category: action === "Выдача" ? "Выдача" : action === "Перемещение" ? "Перемещение" : "Приход",
         entityType: "material",
         entityId: m.productId,
         entityName: product?.name || "Материал",
-        details: m.comment || m.sourceName || "",
+        details: [m.comment || m.sourceName || "", rawType && rawType !== action ? `Тип: ${rawType}` : ""].filter(Boolean).join(" · "),
         quantity: `${Number(m.quantity).toLocaleString("ru-RU", { maximumFractionDigits: 9 })} ${product?.unit || ""}`.trim(),
         route: from || to ? `${from || m.sourceLocation || "—"} → ${to || "—"}` : m.sourceLocation || "",
         document: m.documentNumber || "",
@@ -149,6 +191,11 @@ export async function POST(request: NextRequest) {
     const document = clean(payload.documentNumber || payload.document || payload.number);
     const summaryParts = [
       clean(payload.comment),
+      action === "createProduct" && unit ? `Ед.: ${unit}` : "",
+      action === "createProduct" && clean(payload.category) ? `Категория: ${clean(payload.category)}` : "",
+      action === "createProduct" && clean(payload.brand) ? `Бренд: ${clean(payload.brand)}` : "",
+      action === "createProduct" && clean(payload.color) ? `Цвет: ${clean(payload.color)}` : "",
+      action === "createProduct" && clean(payload.ral) ? `RAL: ${clean(payload.ral)}` : "",
       clean(payload.recipient) ? `Кому: ${clean(payload.recipient)}` : "",
       clean(payload.sourceName) ? `Источник: ${clean(payload.sourceName)}` : "",
       Array.isArray(payload.ids) ? `Объектов: ${payload.ids.length}` : "",
