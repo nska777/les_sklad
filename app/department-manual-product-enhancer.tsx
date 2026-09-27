@@ -196,6 +196,7 @@ export function DepartmentManualProductEnhancer() {
                 body: JSON.stringify({ action: "productCreated", productId: body.id, comment: payload.comment || "" }),
               });
               window.dispatchEvent(new CustomEvent("department-warehouse-changed", { detail: { action: "createProduct", productId: body.id } }));
+              window.setTimeout(() => window.location.reload(), 120);
             }
           }
           if (payload.action === "inventorySnapshot") {
