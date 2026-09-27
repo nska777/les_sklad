@@ -1,6 +1,6 @@
 export type DatabaseCircuitMode = "closed" | "open" | "half-open";
 
-const failureThreshold = Number(process.env.DB_CIRCUIT_FAILURE_THRESHOLD || 2);
+const failureThreshold = Number(process.env.DB_CIRCUIT_FAILURE_THRESHOLD || 1);
 const cooldownMs = Number(process.env.DB_CIRCUIT_COOLDOWN_MS || 60_000);
 
 let mode: DatabaseCircuitMode = "closed";
@@ -37,9 +37,7 @@ export function databaseCircuitState() {
 }
 
 export function canUseCentralDatabase() {
-  if (mode === "closed") return true;
-  if (mode === "half-open") return false;
-  return false;
+  return mode === "closed";
 }
 
 export function canProbeCentralDatabase() {
