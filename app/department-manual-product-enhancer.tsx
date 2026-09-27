@@ -110,15 +110,48 @@ function cleanMaterialTable(root: ParentNode = document) {
     const lines = Array.from(td.querySelectorAll("div"));
     for (const line of lines) {
       const text = line.textContent?.trim() || "";
-      if (text === "без ID 1С" || (line.className.includes("text-slate-400") && text && !line.className.includes("font-mono") && td.querySelector(".font-mono"))) {
-        if (text === "без ID 1С" || /^[A-Za-zА-Яа-я0-9_-]{6,}$/.test(text)) line.remove();
-      }
+      if (text === "без ID 1С") line.remove();
     }
   });
 }
 
 export function DepartmentManualProductEnhancer() {
   useEffect(() => {
+    const originalFetch = window.fetch.bind(window);
+
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const response = await originalFetch(...args);
+      try {
+        const input = args[0];
+        const init = args[1];
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (url.includes("/api/department-warehouse") && !url.includes("/api/department-warehouse-audit") && init?.method?.toUpperCase() === "POST" && response.ok && typeof init.body === "string") {
+          const payload = JSON.parse(init.body) as Record<string, unknown>;
+          if (payload.action === "createProduct") {
+            const body = await response.clone().json() as { id?: string };
+            if (body.id) {
+              void originalFetch("/api/department-warehouse-audit", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "productCreated", productId: body.id, comment: payload.comment || "" }),
+              });
+            }
+          }
+          if (payload.action === "inventorySnapshot") {
+            const body = await response.clone().json() as { id?: string };
+            void originalFetch("/api/department-warehouse-audit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "inventoryCreated", inventoryId: body.id || "", comment: payload.comment || "" }),
+            });
+          }
+        }
+      } catch {
+        // Основная операция уже выполнена; ошибка аудита не должна останавливать склад.
+      }
+      return response;
+    };
+
     const run = () => {
       if (!window.location.pathname.startsWith("/department/")) return;
       document.querySelectorAll<HTMLFormElement>("form").forEach(enhance);
@@ -127,7 +160,10 @@ export function DepartmentManualProductEnhancer() {
     run();
     const observer = new MutationObserver(run);
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.fetch = originalFetch;
+    };
   }, []);
 
   return null;
