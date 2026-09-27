@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { GET as liveGet, POST as livePost } from "@/app/api/department-warehouse/route";
 import { applyDepartmentOfflineOperation } from "@/lib/department-offline";
@@ -15,6 +17,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const syncCooldown = new Map<string, number>();
+const dataDir = process.env.LOCAL_WAREHOUSE_DATA_DIR || "/opt/russian-forest-sklad/data";
+const forceOfflineFile = join(dataDir, "FORCE_OFFLINE_TEST");
+
+function forcedOffline() {
+  return process.env.WAREHOUSE_FORCE_OFFLINE === "1" || existsSync(forceOfflineFile);
+}
 
 function scopes(warehouse: string) {
   return {
@@ -32,6 +40,7 @@ function replayRequest(request: NextRequest, payload: Record<string, unknown>) {
 }
 
 async function syncPending(request: NextRequest, warehouse: string) {
+  if (forcedOffline()) return;
   const { queue } = scopes(warehouse);
   const now = Date.now();
   const last = syncCooldown.get(queue) || 0;
@@ -59,6 +68,21 @@ async function syncPending(request: NextRequest, warehouse: string) {
 export async function GET(request: NextRequest) {
   const warehouse = request.headers.get("x-warehouse-code") || "department";
   const { snapshot } = scopes(warehouse);
+
+  if (forcedOffline()) {
+    const cached = loadLocalSnapshot<Record<string, unknown>>(snapshot);
+    if (cached) {
+      return NextResponse.json({
+        ...cached.payload,
+        resilience: { mode: "offline", cached: true, forced: true, snapshotAt: cached.updatedAt },
+      });
+    }
+    return NextResponse.json({
+      error: "Тестовый офлайн-режим включён, но локальный снимок склада ещё не создан",
+      resilience: { mode: "offline", cached: false, forced: true },
+    }, { status: 503 });
+  }
+
   try {
     await syncPending(request, warehouse);
     const response = await liveGet(request);
@@ -87,12 +111,14 @@ export async function POST(request: NextRequest) {
   const { snapshot, queue } = scopes(warehouse);
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
 
-  try {
-    await syncPending(request, warehouse);
-    const response = await livePost(replayRequest(request, body));
-    if (response.status < 500) return response;
-  } catch {
-    // Центральная база недоступна — операция будет выполнена локально и поставлена в очередь.
+  if (!forcedOffline()) {
+    try {
+      await syncPending(request, warehouse);
+      const response = await livePost(replayRequest(request, body));
+      if (response.status < 500) return response;
+    } catch {
+      // Центральная база недоступна — операция будет выполнена локально и поставлена в очередь.
+    }
   }
 
   try {
@@ -100,7 +126,12 @@ export async function POST(request: NextRequest) {
     const payload = { ...body, _operationId: operationId };
     const result = applyDepartmentOfflineOperation(snapshot, warehouse, operator, payload);
     enqueueOperation(queue, String(body.action || "operation"), payload, operationId);
-    return NextResponse.json({ ...result, operationId, message: "Операция сохранена локально и будет синхронизирована автоматически" }, { status: 202 });
+    return NextResponse.json({
+      ...result,
+      operationId,
+      resilience: { mode: "offline", queued: true, forced: forcedOffline() },
+      message: "Операция сохранена локально и будет синхронизирована автоматически",
+    }, { status: 202 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Операция недоступна в офлайн-режиме" }, { status: 503 });
   }
