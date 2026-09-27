@@ -16,6 +16,7 @@ import { HidePrimaryInventory } from "@/app/hide-primary-inventory";
 import { ResilienceIndicator } from "@/app/resilience-indicator";
 import { DepartmentManualProductEnhancer } from "@/app/department-manual-product-enhancer";
 import { DepartmentPaintUiEnhancer } from "@/app/department-paint-ui-enhancer";
+import { DepartmentPaintIssueEnhancer } from "@/app/department-paint-issue-enhancer";
 import "./globals.css";
 import "./select-arrows.css";
 
@@ -50,6 +51,7 @@ export default function RootLayout({
         <ResilienceIndicator />
         <DepartmentManualProductEnhancer />
         <DepartmentPaintUiEnhancer />
+        <DepartmentPaintIssueEnhancer />
         {children}
         <MaterialsAddAction />
         <IssueMobileScanTools />
