@@ -70,7 +70,7 @@ export async function proxy(request: NextRequest) {
   headers.set("x-warehouse-code", session.warehouse);
   headers.set("x-warehouse-access", session.warehouses.join(","));
 
-  if (pathname === "/api/department-warehouse" && (request.method === "GET" || request.method === "HEAD")) {
+  if (pathname === "/api/department-warehouse") {
     const url = request.nextUrl.clone();
     url.pathname = "/api/department-warehouse-resilient";
     return NextResponse.rewrite(url, { request: { headers } });
