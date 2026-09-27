@@ -16,7 +16,11 @@ export type QueuedOperation = {
   syncedAt: string;
 };
 
-const dataDir = process.env.LOCAL_WAREHOUSE_DATA_DIR || join(process.cwd(), "data");
+const persistentProjectRoot = process.env.WAREHOUSE_PROJECT_ROOT || "/opt/russian-forest-sklad";
+const defaultDataDir = process.env.NODE_ENV === "production" && existsSync(persistentProjectRoot)
+  ? join(persistentProjectRoot, "data")
+  : join(process.cwd(), "data");
+const dataDir = process.env.LOCAL_WAREHOUSE_DATA_DIR || defaultDataDir;
 const dbPath = process.env.LOCAL_WAREHOUSE_DB || join(dataDir, "warehouse-local.sqlite");
 const backupDir = join(dataDir, "backups");
 let localDb: DatabaseSync | null = null;
@@ -138,7 +142,7 @@ export function localResilienceStatus() {
   const db = getLocalDb();
   const pending = Number((db.prepare("SELECT COUNT(*) AS count FROM sync_queue WHERE status IN ('pending','error','syncing')").get() as { count?: number } | undefined)?.count || 0);
   const snapshots = db.prepare("SELECT scope, updated_at FROM local_snapshots ORDER BY updated_at DESC").all() as Array<{ scope: string; updated_at: string }>;
-  return { enabled: true, pending, snapshots: snapshots.map((x) => ({ scope: x.scope, updatedAt: x.updated_at })) };
+  return { enabled: true, pending, snapshots: snapshots.map((x) => ({ scope: x.scope, updatedAt: x.updated_at })), dbPath };
 }
 
 export function createLocalBackup() {
