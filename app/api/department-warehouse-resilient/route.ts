@@ -11,6 +11,7 @@ import {
   saveLocalSnapshot,
 } from "@/lib/local-resilience";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const syncCooldown = new Map<string, number>();
