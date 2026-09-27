@@ -144,6 +144,8 @@ export function localResilienceStatus() {
 export function createLocalBackup() {
   ensureDirs();
   if (!existsSync(dbPath)) return null;
+  const db = getLocalDb();
+  db.exec("PRAGMA wal_checkpoint(FULL)");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const target = join(backupDir, `warehouse-local-${stamp}.sqlite`);
   copyFileSync(dbPath, target);
