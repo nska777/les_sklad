@@ -20,6 +20,7 @@ import { DepartmentPaintIssueEnhancer } from "@/app/department-paint-issue-enhan
 import { DepartmentAuditRecorder } from "@/app/department-audit-recorder";
 import "./globals.css";
 import "./select-arrows.css";
+import "./brand-logo.css";
 
 export const metadata: Metadata = {
   title: "Склад",
