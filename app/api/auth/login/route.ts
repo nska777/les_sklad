@@ -2,12 +2,46 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { warehouseUsers } from "@/db/schema";
+import {
+  canUseCentralDatabase,
+  recordCentralDatabaseFailure,
+  recordCentralDatabaseSuccess,
+} from "@/lib/db-circuit-breaker";
+import { loadLocalSnapshot, saveLocalSnapshot, setCentralDatabaseState } from "@/lib/local-resilience";
 import { allWarehouseCodes, authenticateUser, createSessionToken, isWarehouseCode, normalizeWarehouses, warehouseHome, type WarehouseCode, type WarehouseSession } from "@/lib/warehouse-auth";
 import { verifyPassword } from "@/lib/passwords";
+
+type CachedUser = {
+  username: string;
+  name: string;
+  passwordHash: string;
+  passwordSalt: string;
+  role: WarehouseSession["role"];
+  warehouseCode: string;
+  active: boolean;
+};
 
 function storedWarehouses(value: string | null | undefined): WarehouseCode[] {
   const parsed = String(value || "hardware").split(",").map((item) => item.trim()).filter(isWarehouseCode);
   return normalizeWarehouses(parsed, "hardware");
+}
+
+function sessionFromUser(user: CachedUser): WarehouseSession {
+  const warehouses = user.role === "admin" ? allWarehouseCodes : storedWarehouses(user.warehouseCode);
+  return {
+    username: user.username,
+    name: user.name,
+    role: user.role,
+    warehouse: warehouses[0],
+    warehouses,
+  };
+}
+
+async function authenticateCachedUser(login: string, pass: string) {
+  const cached = loadLocalSnapshot<CachedUser>(`auth:user:${login}`)?.payload;
+  if (!cached?.active) return null;
+  if (!await verifyPassword(pass, cached.passwordSalt, cached.passwordHash)) return null;
+  return sessionFromUser(cached);
 }
 
 export async function POST(request: Request) {
@@ -18,23 +52,38 @@ export async function POST(request: Request) {
   let persistentUserFound = false;
   let databaseAvailable = false;
 
-  try {
-    const db = await getDb();
-    databaseAvailable = true;
-    const [user] = await db.select().from(warehouseUsers).where(eq(warehouseUsers.username, login)).limit(1);
-    persistentUserFound = Boolean(user);
-    if (user && user.active && await verifyPassword(pass, user.passwordSalt, user.passwordHash)) {
-      const warehouses = user.role === "admin" ? allWarehouseCodes : storedWarehouses(user.warehouseCode);
-      session = {
-        username: user.username,
-        name: user.name,
-        role: user.role as WarehouseSession["role"],
-        warehouse: warehouses[0],
-        warehouses,
-      };
+  if (canUseCentralDatabase()) {
+    try {
+      const db = await getDb();
+      const [user] = await db.select().from(warehouseUsers).where(eq(warehouseUsers.username, login)).limit(1);
+      databaseAvailable = true;
+      recordCentralDatabaseSuccess();
+      setCentralDatabaseState(true);
+      persistentUserFound = Boolean(user);
+
+      if (user) {
+        const cachedUser: CachedUser = {
+          username: user.username,
+          name: user.name,
+          passwordHash: user.passwordHash,
+          passwordSalt: user.passwordSalt,
+          role: user.role as WarehouseSession["role"],
+          warehouseCode: user.warehouseCode,
+          active: user.active,
+        };
+        saveLocalSnapshot(`auth:user:${login}`, cachedUser);
+        if (user.active && await verifyPassword(pass, user.passwordSalt, user.passwordHash)) {
+          session = sessionFromUser(cachedUser);
+        }
+      }
+    } catch (error) {
+      recordCentralDatabaseFailure(error);
+      setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
     }
-  } catch {
-    // При недоступной БД остаётся аварийный env-вход.
+  }
+
+  if (!session && (!databaseAvailable || !canUseCentralDatabase())) {
+    session = await authenticateCachedUser(login, pass);
   }
 
   if (!persistentUserFound && (!databaseAvailable || login === "admin")) {
