@@ -17,6 +17,7 @@ import { ResilienceIndicator } from "@/app/resilience-indicator";
 import { DepartmentManualProductEnhancer } from "@/app/department-manual-product-enhancer";
 import { DepartmentPaintUiEnhancer } from "@/app/department-paint-ui-enhancer";
 import { DepartmentPaintIssueEnhancer } from "@/app/department-paint-issue-enhancer";
+import { DepartmentAuditRecorder } from "@/app/department-audit-recorder";
 import "./globals.css";
 import "./select-arrows.css";
 
@@ -49,6 +50,7 @@ export default function RootLayout({
         <NewTabPageLinks />
         <RackTabRouter />
         <ResilienceIndicator />
+        <DepartmentAuditRecorder />
         <DepartmentManualProductEnhancer />
         <DepartmentPaintUiEnhancer />
         <DepartmentPaintIssueEnhancer />
