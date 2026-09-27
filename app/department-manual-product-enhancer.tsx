@@ -16,6 +16,41 @@ function fieldWrap(input: HTMLInputElement | HTMLSelectElement) {
   return input.closest("div");
 }
 
+function parsePositive(value: unknown) {
+  const n = Number(String(value ?? "").trim().replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function relabel(form: HTMLFormElement, name: string, text: string) {
+  const input = form.elements.namedItem(name);
+  if (!(input instanceof HTMLInputElement || input instanceof HTMLSelectElement)) return;
+  const label = fieldWrap(input)?.querySelector("label");
+  if (label) label.textContent = text;
+}
+
+function addInitialQuantityField(form: HTMLFormElement) {
+  if (form.elements.namedItem("initialQuantity")) return;
+  const minStock = form.elements.namedItem("minStock");
+  if (!(minStock instanceof HTMLInputElement)) return;
+  const minWrap = fieldWrap(minStock);
+  if (!minWrap?.parentElement) return;
+
+  const wrap = document.createElement("div");
+  const label = document.createElement("label");
+  label.textContent = "Начальный фактический остаток";
+  const input = document.createElement("input");
+  input.name = "initialQuantity";
+  input.type = "number";
+  input.min = "0";
+  input.step = "0.000000001";
+  input.inputMode = "decimal";
+  input.placeholder = "Например: 1";
+  input.className = minStock.className;
+  input.title = "Реальное количество материала, которое уже есть на складе. Можно оставить 0 и оприходовать позже.";
+  wrap.append(label, input);
+  minWrap.parentElement.insertBefore(wrap, minWrap);
+}
+
 function enhance(form: HTMLFormElement) {
   if (form.dataset.manualProductEnhanced === "1") return;
   const title = form.querySelector("h3")?.textContent?.trim();
@@ -29,6 +64,10 @@ function enhance(form: HTMLFormElement) {
     if (input instanceof HTMLInputElement || input instanceof HTMLSelectElement) fieldWrap(input)?.remove();
   }
 
+  addInitialQuantityField(form);
+  relabel(form, "packSize", "Количество в одной таре");
+  relabel(form, "minStock", "Контрольный минимум");
+
   const placeholders: Record<string, string> = {
     name: "Например: Краска акриловая",
     sku: "Сгенерируйте артикул кнопкой справа",
@@ -37,7 +76,7 @@ function enhance(form: HTMLFormElement) {
     color: "Например: Белый",
     ral: "Например: 9016",
     packSize: "Например: 20",
-    minStock: "Например: 5",
+    minStock: "Например: 5 — порог предупреждения",
     comment: "Например: Добавлено после фактической приёмки",
   };
 
@@ -99,7 +138,7 @@ function enhance(form: HTMLFormElement) {
   }, true);
 
   const submitButton = form.querySelector<HTMLButtonElement>('button[type="submit"], button:not([type])');
-  if (submitButton) submitButton.title = "Добавление будет зафиксировано во вкладке «Движения»";
+  if (submitButton) submitButton.title = "Добавление и начальный остаток будут зафиксированы во вкладке «Движения»";
 }
 
 function cleanMaterialTable(root: ParentNode = document) {
@@ -130,11 +169,33 @@ export function DepartmentManualProductEnhancer() {
           if (payload.action === "createProduct") {
             const body = await response.clone().json() as { id?: string };
             if (body.id) {
+              const initialQuantity = parsePositive(payload.initialQuantity);
+              if (initialQuantity > 0) {
+                const receipt = await originalFetch("/api/department-warehouse-receipt", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    documentNumber: "НАЧАЛЬНЫЙ ОСТАТОК",
+                    sourceName: "Ручное добавление",
+                    productId: body.id,
+                    quantity: initialQuantity,
+                    unit: String(payload.unit || "кг"),
+                    cellId: "",
+                    comment: payload.comment || "Начальный фактический остаток",
+                  }),
+                });
+                if (!receipt.ok) {
+                  const receiptBody = await receipt.json().catch(() => ({})) as { error?: string };
+                  toast.error("Материал создан, но остаток не записан", { description: receiptBody.error || "Оприходуйте количество через вкладку «Приход»." });
+                }
+              }
+
               void originalFetch("/api/department-warehouse-audit", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ action: "productCreated", productId: body.id, comment: payload.comment || "" }),
               });
+              window.dispatchEvent(new CustomEvent("department-warehouse-changed", { detail: { action: "createProduct", productId: body.id } }));
             }
           }
           if (payload.action === "inventorySnapshot") {
@@ -147,7 +208,7 @@ export function DepartmentManualProductEnhancer() {
           }
         }
       } catch {
-        // Основная операция уже выполнена; ошибка аудита не должна останавливать склад.
+        // Основная операция уже выполнена; ошибка дополнительной фиксации не должна останавливать склад.
       }
       return response;
     };
