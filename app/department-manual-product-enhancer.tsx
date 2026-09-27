@@ -36,8 +36,8 @@ function addInitialQuantityField(form: HTMLFormElement) {
   if (!minWrap?.parentElement) return;
 
   const wrap = document.createElement("div");
-  const label = document.createElement("label");
-  label.textContent = "Начальный фактический остаток";
+  const fieldLabel = document.createElement("label");
+  fieldLabel.textContent = "Начальный фактический остаток";
   const input = document.createElement("input");
   input.name = "initialQuantity";
   input.type = "number";
@@ -47,7 +47,8 @@ function addInitialQuantityField(form: HTMLFormElement) {
   input.placeholder = "Например: 1";
   input.className = minStock.className;
   input.title = "Реальное количество материала, которое уже есть на складе. Можно оставить 0 и оприходовать позже.";
-  wrap.append(label, input);
+  wrap.appendChild(fieldLabel);
+  wrap.appendChild(input);
   minWrap.parentElement.insertBefore(wrap, minWrap);
 }
 
