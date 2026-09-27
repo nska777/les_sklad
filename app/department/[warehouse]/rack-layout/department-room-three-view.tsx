@@ -2,9 +2,9 @@
 
 import { ComponentProps, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import { DepartmentRoomThreeView as RoomV2 } from "./department-room-three-view-v2";
+import { DepartmentRoomThreeView as RoomEnhanced } from "./department-room-three-view-enhanced";
 
-type Props = ComponentProps<typeof RoomV2>;
+type Props = ComponentProps<typeof RoomEnhanced>;
 
 export function DepartmentRoomThreeView(props: Props) {
   const searchParams = useSearchParams();
@@ -17,5 +17,5 @@ export function DepartmentRoomThreeView(props: Props) {
     return byCode?.id || null;
   }, [props.cells, queryCell]);
 
-  return <RoomV2 {...props} selectedCellId={props.selectedCellId || locatedCellId} />;
+  return <RoomEnhanced {...props} selectedCellId={props.selectedCellId || locatedCellId} />;
 }
