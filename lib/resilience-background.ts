@@ -4,16 +4,23 @@ import { NextRequest } from "next/server";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
+  beginCentralDatabaseProbe,
+  canUseCentralDatabase,
+  databaseCircuitState,
+  recordCentralDatabaseFailure,
+  recordCentralDatabaseSuccess,
+} from "@/lib/db-circuit-breaker";
+import {
   claimPendingOperations,
   markOperationDone,
   markOperationError,
   recoverStuckSyncOperations,
-  saveLocalSnapshot,
   setCentralDatabaseState,
 } from "@/lib/local-resilience";
 
 const dataDir = process.env.LOCAL_WAREHOUSE_DATA_DIR || "/opt/russian-forest-sklad/data";
 const forceOfflineFile = join(dataDir, "FORCE_OFFLINE_TEST");
+const replayBatchSize = Math.max(1, Number(process.env.DB_SYNC_BATCH_SIZE || 5));
 let loopRunning = false;
 
 function forcedOffline() {
@@ -33,24 +40,29 @@ function headersFor(operator: string, warehouse: string) {
 }
 
 async function probeCentralDatabase() {
+  if (!beginCentralDatabaseProbe()) return false;
   try {
     const db = await getDb();
     await db.execute(sql`SELECT 1`);
+    recordCentralDatabaseSuccess();
     setCentralDatabaseState(true);
     return true;
   } catch (error) {
+    recordCentralDatabaseFailure(error);
     setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
     return false;
   }
 }
 
 async function replayHardware() {
+  if (!canUseCentralDatabase()) return;
   const scope = "hardware:operations";
-  const items = claimPendingOperations(scope, 20);
+  const items = claimPendingOperations(scope, replayBatchSize);
   if (!items.length) return;
-  const { POST: livePost, GET: liveGet } = await import("@/app/api/warehouse/route");
+  const { POST: livePost } = await import("@/app/api/warehouse/route");
 
   for (const item of items) {
+    if (!canUseCentralDatabase()) break;
     try {
       const operator = text(item.payload._operator) || "Кладовщик";
       const request = new NextRequest("http://127.0.0.1:3000/api/warehouse", {
@@ -61,38 +73,36 @@ async function replayHardware() {
       const response = await livePost(request);
       if (!response.ok) {
         const body = await response.clone().json().catch(() => ({})) as { error?: string };
-        markOperationError(item.id, body.error || `HTTP ${response.status}`);
-        setCentralDatabaseState(response.status < 500, body.error || `HTTP ${response.status}`);
+        const message = body.error || `HTTP ${response.status}`;
+        markOperationError(item.id, message);
+        if (response.status >= 500) {
+          recordCentralDatabaseFailure(message);
+          setCentralDatabaseState(false, message);
+          break;
+        }
         continue;
       }
       markOperationDone(item.id, scope);
+      recordCentralDatabaseSuccess();
       setCentralDatabaseState(true);
     } catch (error) {
       markOperationError(item.id, error);
+      recordCentralDatabaseFailure(error);
       setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
       break;
     }
   }
-
-  try {
-    const response = await liveGet();
-    const body = await response.clone().json().catch(() => null) as Record<string, unknown> | null;
-    if (response.ok && body) {
-      saveLocalSnapshot("hardware:snapshot", body);
-      setCentralDatabaseState(true);
-    }
-  } catch {
-    // Очередь уже сохранена локально; повторим на следующем цикле.
-  }
 }
 
 async function replayDepartment(warehouse: "paint" | "ldsp") {
+  if (!canUseCentralDatabase()) return;
   const scope = `department:${warehouse}:operations`;
-  const items = claimPendingOperations(scope, 20);
+  const items = claimPendingOperations(scope, replayBatchSize);
   if (!items.length) return;
-  const { POST: livePost, GET: liveGet } = await import("@/app/api/department-warehouse/route");
+  const { POST: livePost } = await import("@/app/api/department-warehouse/route");
 
   for (const item of items) {
+    if (!canUseCentralDatabase()) break;
     try {
       const operator = text(item.payload._operator) || "Кладовщик";
       const request = new NextRequest("http://127.0.0.1:3000/api/department-warehouse", {
@@ -103,32 +113,24 @@ async function replayDepartment(warehouse: "paint" | "ldsp") {
       const response = await livePost(request);
       if (!response.ok) {
         const body = await response.clone().json().catch(() => ({})) as { error?: string };
-        markOperationError(item.id, body.error || `HTTP ${response.status}`);
-        setCentralDatabaseState(response.status < 500, body.error || `HTTP ${response.status}`);
+        const message = body.error || `HTTP ${response.status}`;
+        markOperationError(item.id, message);
+        if (response.status >= 500) {
+          recordCentralDatabaseFailure(message);
+          setCentralDatabaseState(false, message);
+          break;
+        }
         continue;
       }
       markOperationDone(item.id, scope);
+      recordCentralDatabaseSuccess();
       setCentralDatabaseState(true);
     } catch (error) {
       markOperationError(item.id, error);
+      recordCentralDatabaseFailure(error);
       setCentralDatabaseState(false, error instanceof Error ? error.message : String(error));
       break;
     }
-  }
-
-  try {
-    const request = new NextRequest("http://127.0.0.1:3000/api/department-warehouse", {
-      method: "GET",
-      headers: headersFor("Система", warehouse),
-    });
-    const response = await liveGet(request);
-    const body = await response.clone().json().catch(() => null) as Record<string, unknown> | null;
-    if (response.ok && body) {
-      saveLocalSnapshot(`department:${warehouse}:snapshot`, body);
-      setCentralDatabaseState(true);
-    }
-  } catch {
-    // Повторим на следующем цикле.
   }
 }
 
@@ -141,7 +143,13 @@ export async function runBackgroundSyncOnce() {
   loopRunning = true;
   try {
     const online = await probeCentralDatabase();
-    if (!online) return;
+    if (!online) {
+      const state = databaseCircuitState();
+      if (state.mode === "open") {
+        console.warn(`[resilience] PostgreSQL circuit open; next probe in ${Math.ceil(state.remainingMs / 1000)}s`);
+      }
+      return;
+    }
     await replayHardware();
     await replayDepartment("paint");
     await replayDepartment("ldsp");
