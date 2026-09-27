@@ -74,14 +74,32 @@ async function ensureSchema(run: (statement: string) => Promise<unknown>) {
   ready ??= (async () => { for (const statement of schemaSql) await run(statement); })().catch((error) => { ready = null; throw error; });
   await ready;
 }
+
 function hasDirectPostgresConfig() { return Boolean(process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER); }
+
 function getPgPool() {
   if (pgPool) return pgPool;
   const sslRootCert = process.env.SSL_ROOT_CERT;
   const ssl = sslRootCert ? { ca: readFileSync(sslRootCert, "utf8"), rejectUnauthorized: true } : process.env.DB_SSL === "false" ? false : { rejectUnauthorized: false };
-  pgPool = new Pool({ host: process.env.DB_HOST, port: Number(process.env.DB_PORT || 5432), database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASSWORD, ssl, max: Number(process.env.DB_POOL_MAX || 10), idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000 });
+  pgPool = new Pool({
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT || 5432),
+    database: process.env.DB_NAME,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    ssl,
+    max: Number(process.env.DB_POOL_MAX || 3),
+    min: 0,
+    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 10_000),
+    connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 3_000),
+    statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS || 7_000),
+    query_timeout: Number(process.env.DB_QUERY_TIMEOUT_MS || 8_000),
+    allowExitOnIdle: false,
+  });
+  pgPool.on("error", (error) => console.error("[db-pool] background error", error.message));
   return pgPool;
 }
+
 export async function getDb() {
   if (hasDirectPostgresConfig()) {
     const pool = getPgPool();
