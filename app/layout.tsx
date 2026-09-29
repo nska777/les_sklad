@@ -17,6 +17,7 @@ import { HidePrimaryInventory } from "@/app/hide-primary-inventory";
 import { ResilienceIndicator } from "@/app/resilience-indicator";
 import { DepartmentManualProductEnhancer } from "@/app/department-manual-product-enhancer";
 import { DepartmentLdspMaterialsEnhancer } from "@/app/department-ldsp-materials-enhancer";
+import { LdspDeleteProductFixer } from "@/app/ldsp-delete-product-fixer";
 import { DepartmentPaintUiEnhancer } from "@/app/department-paint-ui-enhancer";
 import { DepartmentPaintIssueEnhancer } from "@/app/department-paint-issue-enhancer";
 import { DepartmentAuditRecorder } from "@/app/department-audit-recorder";
@@ -57,6 +58,7 @@ export default function RootLayout({
         <DepartmentAuditRecorder />
         <DepartmentManualProductEnhancer />
         <DepartmentLdspMaterialsEnhancer />
+        <LdspDeleteProductFixer />
         <DepartmentPaintUiEnhancer />
         <DepartmentPaintIssueEnhancer />
         {children}
