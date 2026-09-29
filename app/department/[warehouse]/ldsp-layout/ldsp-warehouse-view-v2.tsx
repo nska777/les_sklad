@@ -86,7 +86,7 @@ export default function LdspWarehouseViewV2() {
   const products = snapshot.products || [];
   const stocks = snapshot.stocks || [];
   const cells = snapshot.cells || [];
-  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const productMap = useMemo(() => new globalThis.Map(products.map((p) => [p.id, p])), [products]);
 
   const activeSector = sectors.find((s) => s.id === activeSectorId) || sectors[0] || null;
   const pallets = useMemo<PalletInfo[]>(() => {
@@ -205,7 +205,7 @@ export default function LdspWarehouseViewV2() {
     const right = left.clone(); right.position.x = 17; scene.add(right);
 
     const clickables: THREE.Object3D[] = [];
-    const clickMap = new Map<string, { sectorId: string; palletId?: string }>();
+    const clickMap = new globalThis.Map<string, { sectorId: string; palletId?: string }>();
 
     sectors.forEach((sector, index) => {
       const palette = palettes[index % palettes.length];
@@ -315,6 +315,6 @@ function MiniPlan({ sectors, activeSectorId, onPick }: { sectors: Rack[]; active
 }
 
 function PlanView({ sectors, cells, stocks, products, activeSectorId, onSector, onPallet }: { sectors: Rack[]; cells: Cell[]; stocks: Stock[]; products: Product[]; activeSectorId: string | null; onSector: (id: string) => void; onPallet: (id: string) => void }) {
-  const map = new Map(products.map((p) => [p.id, p]));
+  const map = new globalThis.Map(products.map((p) => [p.id, p]));
   return <div className="min-h-[720px] p-5"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{sectors.map((sector, index) => { const sectorCells = cells.filter((c) => c.rackId === sector.id).sort((a,b) => a.columnIndex-b.columnIndex); return <div key={sector.id} onClick={() => onSector(sector.id)} className={`rounded-[22px] border p-4 ${activeSectorId === sector.id ? "border-white/50 bg-white/[.08]" : "border-white/10 bg-white/[.03]"}`}><div className="mb-3 flex items-center justify-between"><div><div className="text-xl font-black" style={{ color: `#${palettes[index % palettes.length].glow.toString(16).padStart(6, "0")}` }}>{sector.code}</div><div className="text-sm font-bold">{sector.name}</div></div><div className="text-xs text-slate-500">{sectorCells.length} паллет</div></div><div className="grid grid-cols-2 gap-2">{sectorCells.map((cell) => { const ss = stocks.filter((s) => s.cellId === cell.id && Number(s.quantity)>0); const names = ss.map((s) => map.get(s.productId)?.name || "Материал"); return <button key={cell.id} onClick={(e) => { e.stopPropagation(); onPallet(cell.id); }} className="min-h-24 rounded-xl border border-white/10 bg-[#111c2b] p-2 text-left hover:border-emerald-400/60"><b className="text-xs">{cell.code}</b><div className="mt-2 text-xs text-slate-400">{names.length ? names.slice(0,2).join(" / ") : "Свободно"}</div>{ss.length > 0 && <div className="mt-1 text-[11px] text-emerald-400">{ss.reduce((sum,s) => sum+Number(s.quantity||0),0).toLocaleString("ru-RU")} ед.</div>}</button>; })}</div></div>; })}</div></div>;
 }
