@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Toaster } from "@/components/ui/sonner";
 import { PwaRegister } from "@/app/pwa-tools";
 import { RackTabRouter } from "@/app/rack-tab-router";
+import { LdspTabRouter } from "@/app/ldsp-tab-router";
 import { NewTabPageLinks } from "@/app/new-tab-page-links";
 import { SessionMenu } from "@/app/session-menu";
 import { CodeZoom } from "@/app/code-zoom";
@@ -50,6 +51,7 @@ export default function RootLayout({
         <AddStockExceptionHelper />
         <NewTabPageLinks />
         <RackTabRouter />
+        <LdspTabRouter />
         <ResilienceIndicator />
         <DepartmentAuditRecorder />
         <DepartmentManualProductEnhancer />
