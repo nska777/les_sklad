@@ -1,5 +1,5 @@
-import LdspWarehouseView from "./ldsp-warehouse-view";
+import LdspWarehouseViewV2 from "./ldsp-warehouse-view-v2";
 
 export default function LdspLayoutPage() {
-  return <LdspWarehouseView />;
+  return <LdspWarehouseViewV2 />;
 }
