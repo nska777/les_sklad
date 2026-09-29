@@ -137,6 +137,22 @@ export function DepartmentLdspMaterialsEnhancer() {
 
       const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
       headers.set("x-warehouse-code", "ldsp");
+
+      if (url.includes("/api/department-warehouse-controls") && init?.method?.toUpperCase() === "POST" && typeof init.body === "string") {
+        try {
+          const payload = JSON.parse(init.body) as Record<string, unknown>;
+          if (payload.action === "deleteProductAdmin") {
+            return originalFetch("/api/department-warehouse", {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ action: "deleteProduct", id: String(payload.productId || "") }),
+            });
+          }
+        } catch {
+          // Если это не JSON, отправляем исходный запрос.
+        }
+      }
+
       return originalFetch(input, { ...init, headers });
     };
 
