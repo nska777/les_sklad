@@ -84,7 +84,7 @@ export default function LdspWarehouseView() {
 
   useEffect(() => {
     void fetch("/api/department-warehouse", { cache: "no-store" })
-      .then((r) => r.json())
+      .then((r) => r.json() as Promise<Snapshot>)
       .then((body) => setSnapshot(body))
       .catch(() => setSnapshot({}));
   }, []);
