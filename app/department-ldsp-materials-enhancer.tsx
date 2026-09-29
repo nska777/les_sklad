@@ -5,6 +5,8 @@ import { useEffect } from "react";
 const CATEGORIES = ["Дерево", "ДСП", "ЛДСП", "МДФ", "ЛМДФ", "ДВП", "Фанера", "Шпон"];
 const UNIT_SUGGESTIONS = ["м²", "шт.", "лист"];
 
+type FormField = HTMLInputElement | HTMLSelectElement;
+
 function generatedSku() {
   const now = new Date();
   const date = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
@@ -12,7 +14,7 @@ function generatedSku() {
   return `LDSP-${date}-${tail}`;
 }
 
-function wrapOf(el: Element | null) {
+function wrapOf(el: FormField | null) {
   return el?.closest("div") as HTMLElement | null;
 }
 
@@ -85,7 +87,6 @@ function enhanceLdspForm(form: HTMLFormElement) {
   if (title !== "Добавить материал вручную") return;
   form.dataset.ldspEnhanced = "1";
 
-  // Убираем поля, относящиеся к складу краски и начальному остатку.
   ["oneCId", "subcategory", "imageUrl", "packSize", "minStock", "packType", "initialQuantity"].forEach((name) => removeField(form, name));
 
   replaceCategory(form);
