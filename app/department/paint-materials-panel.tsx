@@ -17,7 +17,7 @@ type AuthMeResponse = { user?: { role?: string } };
 type WarehouseResponse = { racks?: Rack[] };
 
 const fmt = (v: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 9 }).format(v);
-const preciseUnits = ["кг", "г", "мг", "л", "мл", "мкл", "шт."];
+const preciseUnits = ["кг", "г", "мг", "л", "мл", "мкл", "шт.", "м²", "лист"];
 const normUnit = (value: string) => value.trim().toLowerCase().replace("шт", "шт.");
 const unitToBase = (unit: string) => {
   const u = normUnit(unit);
@@ -27,6 +27,8 @@ const unitToBase = (unit: string) => {
   if (u === "л") return { family: "volume", factor: 1 };
   if (u === "мл") return { family: "volume", factor: .001 };
   if (u === "мкл") return { family: "volume", factor: .000001 };
+  if (u === "м²") return { family: "area", factor: 1 };
+  if (u === "лист") return { family: "sheet", factor: 1 };
   return { family: "piece", factor: 1 };
 };
 const convertQuantity = (value: number, from: string, to: string) => {
@@ -36,7 +38,7 @@ const convertQuantity = (value: number, from: string, to: string) => {
 };
 const isUnplacedCell = (cell?: Cell) => cell?.code === "ОЖИДАЕТ-РАЗМЕЩЕНИЯ" || cell?.label === "Ожидает размещения";
 
-export function PaintMaterialsPanel({ products, cells, stocks }: { products: Product[]; cells: Cell[]; stocks: Stock[]; warehouseCode?: string }) {
+export function PaintMaterialsPanel({ products, cells, stocks, warehouseCode = "paint" }: { products: Product[]; cells: Cell[]; stocks: Stock[]; warehouseCode?: string }) {
   const [query, setQuery] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [racks, setRacks] = useState<Rack[]>([]);
@@ -45,6 +47,8 @@ export function PaintMaterialsPanel({ products, cells, stocks }: { products: Pro
   const [quantity, setQuantity] = useState("");
   const [inputUnit, setInputUnit] = useState("кг");
   const [busy, setBusy] = useState(false);
+
+  const warehouseHeaders = useMemo(() => ({ "x-warehouse-code": warehouseCode }), [warehouseCode]);
 
   useEffect(() => {
     const loadAccess = async () => {
@@ -58,7 +62,7 @@ export function PaintMaterialsPanel({ products, cells, stocks }: { products: Pro
     };
     const loadRacks = async () => {
       try {
-        const r = await fetch("/api/department-warehouse", { cache: "no-store" });
+        const r = await fetch("/api/department-warehouse", { cache: "no-store", headers: warehouseHeaders });
         const body = await r.json() as WarehouseResponse;
         setRacks(Array.isArray(body.racks) ? body.racks : []);
       } catch {
@@ -67,7 +71,7 @@ export function PaintMaterialsPanel({ products, cells, stocks }: { products: Pro
     };
     void loadAccess();
     void loadRacks();
-  }, []);
+  }, [warehouseHeaders]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -98,7 +102,7 @@ export function PaintMaterialsPanel({ products, cells, stocks }: { products: Pro
     if (converted > Number(move.stock.quantity) + 1e-12) return toast.error(`Доступно ${fmt(Number(move.stock.quantity))} ${move.product.unit}`);
     setBusy(true);
     try {
-      const r = await fetch("/api/department-warehouse-controls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "moveProduct", productId: move.product.id, fromCellId: move.stock.cellId, toCellId: targetCellId, quantity: Number(converted.toFixed(9)), comment: `${isUnplacedCell(cellById.get(move.stock.cellId)) ? "Размещение" : "Перемещение"} из раздела Материалы: ${raw} ${inputUnit}` }) });
+      const r = await fetch("/api/department-warehouse-controls", { method: "POST", headers: { "Content-Type": "application/json", ...warehouseHeaders }, body: JSON.stringify({ action: "moveProduct", productId: move.product.id, fromCellId: move.stock.cellId, toCellId: targetCellId, quantity: Number(converted.toFixed(9)), comment: `${isUnplacedCell(cellById.get(move.stock.cellId)) ? "Размещение" : "Перемещение"} из раздела Материалы: ${raw} ${inputUnit}` }) });
       const body = await r.json() as { error?: string };
       if (!r.ok) throw new Error(body.error || "Не удалось переместить материал");
       toast.success(isUnplacedCell(cellById.get(move.stock.cellId)) ? "Материал размещён" : "Материал перемещён"); setMove(null); window.setTimeout(() => window.location.reload(), 180);
@@ -110,7 +114,7 @@ export function PaintMaterialsPanel({ products, cells, stocks }: { products: Pro
     if (!isAdmin || !confirm(`Удалить материал «${product.name}» полностью вместе с остатками и историей движений?`)) return;
     setBusy(true);
     try {
-      const r = await fetch("/api/department-warehouse-controls", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "deleteProductAdmin", productId: product.id }) });
+      const r = await fetch("/api/department-warehouse-controls", { method: "POST", headers: { "Content-Type": "application/json", ...warehouseHeaders }, body: JSON.stringify({ action: "deleteProductAdmin", productId: product.id }) });
       const body = await r.json() as { error?: string };
       if (!r.ok) throw new Error(body.error || "Не удалось удалить материал");
       toast.success("Материал удалён"); window.setTimeout(() => window.location.reload(), 180);
@@ -136,7 +140,7 @@ export function PaintMaterialsPanel({ products, cells, stocks }: { products: Pro
             <div className="rounded-2xl bg-slate-50 p-4 text-center"><div className="text-xs text-slate-500">Всего на складе</div><div className="mt-1 text-2xl font-black">{fmt(total)} <span className="text-sm">{p.unit}</span></div></div>
             <div><div className="mb-2 text-xs font-black uppercase tracking-wider text-slate-500">Места хранения</div><div className="space-y-2">
               {unplaced.map((s) => <div key={`${p.id}-${s.cellId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-orange-200 bg-orange-50/60 px-3 py-2 text-xs"><span className="inline-flex items-center gap-2 font-bold text-orange-800"><MapPin size={14}/> Ожидает размещения</span><span className="font-black">{fmt(Number(s.quantity))} {p.unit}</span><Button type="button" size="sm" variant="outline" onClick={()=>openMove(p,s)}><ArrowRightLeft size={14}/> Разместить</Button></div>)}
-              {locations.map((s) => { const cell = cellById.get(s.cellId); const rack = cell ? rackById.get(cell.rackId) : undefined; const locationHref = `/department/paint/rack-layout?product=${encodeURIComponent(p.id)}&cell=${encodeURIComponent(s.cellId)}`; return <div key={`${p.id}-${s.cellId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2 text-xs"><Link data-same-tab="true" href={locationHref} className="inline-flex items-center gap-2 rounded-lg px-1 py-1 font-bold transition hover:bg-blue-50 hover:text-blue-700"><MapPin size={14}/>{rack?.storageType === "floor" ? "Напольная зона" : `Стеллаж ${rack?.code || ""}`} · {cell?.code || "—"}{cell?.rowIndex !== undefined && rack?.storageType !== "floor" ? ` · полка ${cell.rowIndex + 1}` : ""}</Link><span className="font-black">{fmt(Number(s.quantity))} {p.unit}</span><Button type="button" size="sm" variant="outline" onClick={()=>openMove(p,s)}><ArrowRightLeft size={14}/> Переместить</Button></div>; })}
+              {locations.map((s) => { const cell = cellById.get(s.cellId); const rack = cell ? rackById.get(cell.rackId) : undefined; const baseStoragePath = warehouseCode === "ldsp" ? `/department/${warehouseCode}/ldsp-layout` : `/department/${warehouseCode}/rack-layout`; const locationHref = `${baseStoragePath}?product=${encodeURIComponent(p.id)}&cell=${encodeURIComponent(s.cellId)}`; return <div key={`${p.id}-${s.cellId}`} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2 text-xs"><Link data-same-tab="true" href={locationHref} className="inline-flex items-center gap-2 rounded-lg px-1 py-1 font-bold transition hover:bg-blue-50 hover:text-blue-700"><MapPin size={14}/>{rack?.storageType === "floor" ? "Напольная зона" : `Стеллаж ${rack?.code || ""}`} · {cell?.code || "—"}{cell?.rowIndex !== undefined && rack?.storageType !== "floor" ? ` · полка ${cell.rowIndex + 1}` : ""}</Link><span className="font-black">{fmt(Number(s.quantity))} {p.unit}</span><Button type="button" size="sm" variant="outline" onClick={()=>openMove(p,s)}><ArrowRightLeft size={14}/> Переместить</Button></div>; })}
               {!allStocks.length && <span className="text-sm text-slate-400">Остатка пока нет</span>}
             </div></div>
           </article>;
