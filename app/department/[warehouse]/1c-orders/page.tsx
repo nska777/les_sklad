@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+type ApiErrorBody = {
+  error?: string | { message?: string };
+};
+
 type TaskLine = {
   lineId: string;
   productId: string;
@@ -31,6 +35,17 @@ type Task = {
   items: TaskLine[];
 };
 
+type TasksResponse = ApiErrorBody & {
+  tasks?: Task[];
+};
+
+type IssueResponse = ApiErrorBody & {
+  shortage?: boolean;
+  line?: {
+    issuedQuantity?: number;
+  };
+};
+
 const statusLabel: Record<string, string> = {
   received: "Новое",
   in_progress: "В работе",
@@ -47,6 +62,12 @@ const warehouseLabel: Record<string, string> = {
   ldsp: "Склад ЛДСП",
 };
 
+function apiMessage(body: ApiErrorBody, fallback: string) {
+  if (typeof body.error === "string") return body.error;
+  if (body.error && typeof body.error === "object" && typeof body.error.message === "string") return body.error.message;
+  return fallback;
+}
+
 export default function OnecOrdersPage() {
   const params = useParams<{ warehouse: string }>();
   const warehouse = String(params?.warehouse || "");
@@ -59,8 +80,8 @@ export default function OnecOrdersPage() {
     setLoading(true);
     try {
       const response = await fetch(`/api/integration/1c/tasks?warehouse=${encodeURIComponent(warehouse)}`, { cache: "no-store" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message || body?.error || "Не удалось загрузить задания");
+      const body = await response.json() as TasksResponse;
+      if (!response.ok) throw new Error(apiMessage(body, "Не удалось загрузить задания"));
       setTasks(Array.isArray(body.tasks) ? body.tasks : []);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Ошибка загрузки");
@@ -86,8 +107,8 @@ export default function OnecOrdersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event: "start", operationId: `START-${task.documentId}-${Date.now()}` }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message || body?.error || "Не удалось начать сборку");
+      const body = await response.json() as ApiErrorBody;
+      if (!response.ok) throw new Error(apiMessage(body, "Не удалось начать сборку"));
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Ошибка");
@@ -106,10 +127,10 @@ export default function OnecOrdersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lineId: line.lineId, quantity, operationId: `ISSUE-${task.documentId}-${line.lineId}-${Date.now()}` }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message || body?.error || "Не удалось выполнить выдачу");
+      const body = await response.json() as IssueResponse;
+      if (!response.ok) throw new Error(apiMessage(body, "Не удалось выполнить выдачу"));
       if (body.shortage) setMessage(`Выдано доступное количество. Недостача по «${line.name}» поставлена в ожидание закупки.`);
-      else setMessage(`«${line.name}» выдано: ${body?.line?.issuedQuantity ?? quantity} ${line.unit}`);
+      else setMessage(`«${line.name}» выдано: ${body.line?.issuedQuantity ?? quantity} ${line.unit}`);
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Ошибка выдачи");
