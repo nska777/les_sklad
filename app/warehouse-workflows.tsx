@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRightLeft,
@@ -131,6 +131,10 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
     setIssueQuantity("");
     setCellScan("");
   };
+
+  useEffect(() => {
+    resetIssueVerification();
+  }, [activeLine?.lineId]);
 
   const postWarehouse = async (payload: Record<string, unknown>) => {
     const response = await fetch("/api/warehouse", {
@@ -435,10 +439,16 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
       </div>
     </TabsContent>
 
-    <Dialog open={issueWizardOpen && !!activeIssue && !!activeLine && remainingLine > 0} onOpenChange={setIssueWizardOpen}>
-      <DialogContent className="max-h-[94vh] w-[calc(100vw-20px)] overflow-y-auto p-0 sm:max-w-2xl">
+    <Dialog
+      open={issueWizardOpen && !!activeIssue && !!activeLine && remainingLine > 0}
+      onOpenChange={(open) => {
+        setIssueWizardOpen(open);
+        if (!open) resetIssueVerification();
+      }}
+    >
+      <DialogContent className="max-h-[94vh] w-[calc(100vw-20px)] overflow-y-auto p-0 sm:max-w-2xl [&_[data-slot=dialog-close]]:right-4 [&_[data-slot=dialog-close]]:top-4 [&_[data-slot=dialog-close]]:z-20 [&_[data-slot=dialog-close]]:flex [&_[data-slot=dialog-close]]:h-9 [&_[data-slot=dialog-close]]:w-9 [&_[data-slot=dialog-close]]:items-center [&_[data-slot=dialog-close]]:justify-center [&_[data-slot=dialog-close]]:rounded-full [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-white/20 [&_[data-slot=dialog-close]]:bg-white/10 [&_[data-slot=dialog-close]]:text-white [&_[data-slot=dialog-close]]:opacity-100 [&_[data-slot=dialog-close]]:hover:bg-white/20">
         {activeIssue && activeLine && <>
-          <div className="border-b border-black/10 bg-slate-950 px-5 py-5 text-white sm:px-7">
+          <div className="border-b border-black/10 bg-slate-950 px-5 py-5 pr-16 text-white sm:px-7 sm:pr-16">
             <DialogHeader>
               <DialogTitle className="text-xl text-white sm:text-2xl">Выдача материала</DialogTitle>
               <DialogDescription className="text-slate-300">Документ {activeIssue.number} · {activeIssue.recipient}</DialogDescription>
