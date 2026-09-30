@@ -21,6 +21,7 @@ import { DepartmentPaintUiEnhancer } from "@/app/department-paint-ui-enhancer";
 import { DepartmentPaintIssueEnhancer } from "@/app/department-paint-issue-enhancer";
 import { DepartmentAuditRecorder } from "@/app/department-audit-recorder";
 import { HardwareLiveSync } from "@/app/hardware-live-sync";
+import { HardwareIssueAdminTools } from "@/app/hardware-issue-admin-tools";
 import "./globals.css";
 import "./select-arrows.css";
 import "./brand-logo.css";
@@ -56,6 +57,7 @@ export default function RootLayout({
         <LdspTabRouter />
         <ResilienceIndicator />
         <HardwareLiveSync />
+        <HardwareIssueAdminTools />
         <DepartmentAuditRecorder />
         <DepartmentManualProductEnhancer />
         <DepartmentLdspMaterialsEnhancer />
