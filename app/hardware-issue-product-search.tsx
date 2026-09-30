@@ -49,13 +49,22 @@ export function HardwareIssueProductSearch() {
       host.dataset.hwProductSearch = "1";
       host.className = "relative w-full";
 
+      const inputWrap = document.createElement("div");
+      inputWrap.className = "relative w-full";
+
       const input = document.createElement("input");
       input.type = "text";
       input.autocomplete = "off";
       input.spellcheck = false;
       input.placeholder = "Начните писать название, артикул или штрихкод…";
-      input.className = "flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 pr-10 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+      input.className = "flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 pr-9 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
       input.value = selectedLabel(select);
+
+      const arrow = document.createElement("button");
+      arrow.type = "button";
+      arrow.setAttribute("aria-label", "Открыть список материалов");
+      arrow.className = "absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none";
+      arrow.innerHTML = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true" class="h-4 w-4"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
       const hint = document.createElement("div");
       hint.className = "mt-1 text-[11px] text-slate-500";
@@ -145,19 +154,21 @@ export function HardwareIssueProductSearch() {
       input.addEventListener("blur", () => {
         window.setTimeout(() => list.classList.add("hidden"), 120);
       });
+      arrow.addEventListener("mousedown", (event) => event.preventDefault());
+      arrow.addEventListener("click", () => {
+        input.focus();
+        open();
+      });
       select.addEventListener("change", () => {
         input.value = selectedLabel(select);
       });
 
-      select.style.position = "absolute";
-      select.style.width = "1px";
-      select.style.height = "1px";
-      select.style.opacity = "0";
-      select.style.pointerEvents = "none";
-      select.style.overflow = "hidden";
+      select.style.display = "none";
 
       select.parentElement?.insertBefore(host, select);
-      host.appendChild(input);
+      inputWrap.appendChild(input);
+      inputWrap.appendChild(arrow);
+      host.appendChild(inputWrap);
       host.appendChild(list);
       host.appendChild(hint);
     };
