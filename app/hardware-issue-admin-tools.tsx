@@ -12,7 +12,7 @@ type Stock = { productId: string; cellId: string; quantity: number };
 type Doc = { id: string; number: string; type: string; status: string; oneCId: string | null; processedQuantity: number };
 type Snapshot = { racks: Rack[]; cells: Cell[]; products: Product[]; stocks: Stock[]; documents: Doc[] };
 
-function host(key: string, anchor: Element, after = false) {
+function host(key: string, anchor: globalThis.Element, after = false) {
   let node = document.querySelector<HTMLElement>(`[data-hw-tool="${key}"]`);
   if (!node) {
     node = document.createElement("div");
@@ -63,7 +63,11 @@ export function HardwareIssueAdminTools() {
     const mount = () => {
       const panelTitle = Array.from(document.querySelectorAll("h2")).find((n) => n.textContent?.trim() === "Собрать и выдать");
       const panel = panelTitle?.closest("section.panel");
-      const select = panel ? Array.from(panel.querySelectorAll<HTMLSelectElement>("select")).find((s) => Array.from(s.options).some((o) => o.textContent?.includes("поз."))) : null;
+      const select = panel
+        ? Array.from(panel.querySelectorAll("select"))
+            .map((node) => node as unknown as HTMLSelectElement)
+            .find((s) => Array.from(s.options).some((o) => o.textContent?.includes("поз.")))
+        : null;
       const selectedId = select?.value || "";
       setDocumentId(selectedId);
       if (select?.parentElement) setDeleteHost(host("delete", select.parentElement, true));
