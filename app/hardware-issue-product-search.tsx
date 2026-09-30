@@ -45,9 +45,17 @@ export function HardwareIssueProductSearch() {
       select.dataset.hwSearchEnhanced = "1";
       select.required = false;
 
+      const nativeWrapper = select.closest<HTMLElement>("[data-slot='native-select-wrapper']");
+      if (nativeWrapper) {
+        nativeWrapper.style.width = "100%";
+        nativeWrapper.style.maxWidth = "760px";
+        const nativeIcon = nativeWrapper.querySelector<HTMLElement>("[data-slot='native-select-icon']");
+        if (nativeIcon) nativeIcon.style.display = "none";
+      }
+
       const host = document.createElement("div");
       host.dataset.hwProductSearch = "1";
-      host.className = "relative w-full";
+      host.className = "relative w-full max-w-[760px]";
 
       const inputWrap = document.createElement("div");
       inputWrap.className = "relative w-full";
@@ -57,21 +65,34 @@ export function HardwareIssueProductSearch() {
       input.autocomplete = "off";
       input.spellcheck = false;
       input.placeholder = "Начните писать название, артикул или штрихкод…";
-      input.className = "flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 pr-9 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+      input.className = "flex h-10 w-full rounded-xl border border-input bg-transparent px-3 py-2 pr-10 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
       input.value = selectedLabel(select);
 
       const arrow = document.createElement("button");
       arrow.type = "button";
       arrow.setAttribute("aria-label", "Открыть список материалов");
-      arrow.className = "absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none";
-      arrow.innerHTML = '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true" class="h-4 w-4"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      arrow.setAttribute("aria-expanded", "false");
+      arrow.className = "absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus:outline-none";
 
       const hint = document.createElement("div");
       hint.className = "mt-1 text-[11px] text-slate-500";
       hint.textContent = "Поиск по названию, RL-артикулу или штрихкоду";
 
       const list = document.createElement("div");
-      list.className = "absolute left-0 right-0 z-[90] mt-1 hidden max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl";
+      list.className = "absolute left-0 right-0 z-[90] mt-1 hidden max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl";
+
+      const setArrowState = (opened: boolean) => {
+        arrow.setAttribute("aria-expanded", opened ? "true" : "false");
+        arrow.setAttribute("aria-label", opened ? "Закрыть список материалов" : "Открыть список материалов");
+        arrow.innerHTML = opened
+          ? '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true" class="h-4 w-4"><path d="M6 12l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+          : '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true" class="h-4 w-4"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      };
+
+      const close = () => {
+        list.classList.add("hidden");
+        setArrowState(false);
+      };
 
       const render = () => {
         const query = normalize(input.value);
@@ -122,7 +143,7 @@ export function HardwareIssueProductSearch() {
             select.value = option.value;
             select.dispatchEvent(new Event("change", { bubbles: true }));
             input.value = option.textContent?.trim() || product?.name || "";
-            list.classList.add("hidden");
+            close();
           });
           list.appendChild(button);
         }
@@ -131,9 +152,14 @@ export function HardwareIssueProductSearch() {
       const open = () => {
         render();
         list.classList.remove("hidden");
+        setArrowState(true);
       };
 
-      input.addEventListener("focus", open);
+      setArrowState(false);
+
+      input.addEventListener("focus", () => {
+        if (list.classList.contains("hidden")) open();
+      });
       input.addEventListener("input", () => {
         if (select.value) {
           select.value = "";
@@ -142,7 +168,10 @@ export function HardwareIssueProductSearch() {
         open();
       });
       input.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") list.classList.add("hidden");
+        if (event.key === "Escape") {
+          event.preventDefault();
+          close();
+        }
         if (event.key === "Enter") {
           const first = list.querySelector("button");
           if (first instanceof HTMLButtonElement) {
@@ -152,12 +181,16 @@ export function HardwareIssueProductSearch() {
         }
       });
       input.addEventListener("blur", () => {
-        window.setTimeout(() => list.classList.add("hidden"), 120);
+        window.setTimeout(() => close(), 120);
       });
       arrow.addEventListener("mousedown", (event) => event.preventDefault());
       arrow.addEventListener("click", () => {
-        input.focus();
-        open();
+        if (list.classList.contains("hidden")) {
+          input.focus();
+          open();
+        } else {
+          close();
+        }
       });
       select.addEventListener("change", () => {
         input.value = selectedLabel(select);
