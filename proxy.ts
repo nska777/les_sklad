@@ -8,6 +8,12 @@ export async function proxy(request: NextRequest) {
   const session = await verifySessionToken(token);
   const pathname = request.nextUrl.pathname;
 
+  // Внешняя интеграция 1С использует собственную Bearer Token авторизацию.
+  // Для этих endpoint'ов браузерная warehouse_session не требуется.
+  if (pathname.startsWith("/api/integration/1c/")) {
+    return NextResponse.next();
+  }
+
   if (pathname === "/login") {
     if (session) {
       const destination = session.warehouses.length > 1 ? "/departments" : warehouseHome(session.warehouse);
