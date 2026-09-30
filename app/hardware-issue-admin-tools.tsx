@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MapPin, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,6 +31,7 @@ export function HardwareIssueAdminTools() {
   const [deleteHost, setDeleteHost] = useState<HTMLElement | null>(null);
   const [addressHost, setAddressHost] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
+  const markedInProgress = useRef(new Set<string>());
 
   useEffect(() => {
     if (window.location.pathname !== "/warehouse") return;
@@ -46,11 +47,25 @@ export function HardwareIssueAdminTools() {
 
   useEffect(() => {
     if (window.location.pathname !== "/warehouse") return;
+    const markProgress = (id: string) => {
+      if (!id || markedInProgress.current.has(id)) return;
+      markedInProgress.current.add(id);
+      void fetch("/api/warehouse/issues/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId: id }),
+      }).then((response) => {
+        if (response.ok) window.dispatchEvent(new Event("hardware:refresh-now"));
+        else markedInProgress.current.delete(id);
+      }).catch(() => markedInProgress.current.delete(id));
+    };
+
     const mount = () => {
       const panelTitle = Array.from(document.querySelectorAll("h2")).find((n) => n.textContent?.trim() === "Собрать и выдать");
       const panel = panelTitle?.closest("section.panel");
       const select = panel ? Array.from(panel.querySelectorAll<HTMLSelectElement>("select")).find((s) => Array.from(s.options).some((o) => o.textContent?.includes("поз."))) : null;
-      setDocumentId(select?.value || "");
+      const selectedId = select?.value || "";
+      setDocumentId(selectedId);
       if (select?.parentElement) setDeleteHost(host("delete", select.parentElement, true));
 
       const dialog = document.querySelector<HTMLElement>("[role='dialog']");
@@ -63,6 +78,10 @@ export function HardwareIssueAdminTools() {
       const card = marker?.closest(".rounded-2xl");
       if (card) setAddressHost(host("address", card, true));
       setBarcode(dialog.querySelector<HTMLElement>("[data-barcode-value]")?.dataset.barcodeValue?.trim().toUpperCase() || "");
+
+      const verifiedTitle = Array.from(dialog.querySelectorAll<HTMLElement>("div")).find((n) => n.textContent?.trim() === "Отсканируйте штрихкод материала");
+      const verifiedStep = verifiedTitle?.closest<HTMLElement>(".rounded-2xl");
+      if (selectedId && verifiedStep?.className.includes("emerald")) markProgress(selectedId);
     };
     mount();
     const observer = new MutationObserver(mount);
@@ -110,11 +129,15 @@ export function HardwareIssueAdminTools() {
     }
   };
 
+  const statusText = current?.status === "in_progress" ? "Сборка начата" : current?.status === "partial" ? "Выдано частично" : "Новое задание";
+  const statusClass = current?.status === "in_progress" || current?.status === "partial" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600";
+
   return <>
-    {deleteHost && admin && current && createPortal(
+    {deleteHost && current && createPortal(
       <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass}`}>{statusText}</span>
         {canDelete && <button type="button" disabled={busy} onClick={() => void remove()} className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"><Trash2 size={16} />{busy ? "Удаление..." : "Удалить заказ"}</button>}
-        {current.oneCId && <span className="text-xs text-slate-500">Связан с 1С — удаление через отмену документа.</span>}
+        {admin && current.oneCId && <span className="text-xs text-slate-500">Связан с 1С — удаление через отмену документа.</span>}
       </div>, deleteHost)}
 
     {addressHost && createPortal(
