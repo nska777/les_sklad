@@ -157,7 +157,9 @@ export function HardwareIssueProductSearch() {
       select.style.overflow = "hidden";
 
       select.parentElement?.insertBefore(host, select);
-      host.append(input, list, hint);
+      host.appendChild(input);
+      host.appendChild(list);
+      host.appendChild(hint);
     };
 
     const mount = () => {
