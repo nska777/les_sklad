@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "next/navigation";
-import { FileSpreadsheet, TriangleAlert } from "lucide-react";
+import { ClipboardList, FileSpreadsheet, TriangleAlert } from "lucide-react";
 import WarehouseFullUiV4 from "./warehouse-full-ui-v4";
 import { WarehouseExcelToolsV2 } from "./warehouse-excel-tools-v2";
 import { DepartmentAuditPanel } from "./department-audit-panel";
@@ -47,6 +47,7 @@ export default function WarehouseFullUiV5() {
   }, [warehouse]);
 
   const buttons = <span className="inline-flex items-center gap-2">
+    <a href={`/department/${warehouse}/1c-orders`} data-same-tab="true" className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-semibold text-blue-800 shadow-sm hover:bg-blue-100"><ClipboardList size={15}/> Задания 1С</a>
     <a href={`/department/${warehouse}/onec-materials`} data-same-tab="true" className="inline-flex h-9 items-center gap-2 rounded-lg border bg-white/80 px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-white"><FileSpreadsheet size={15}/> Материалы из 1С</a>
     <a href={`/department/${warehouse}/excess`} data-same-tab="true" className="inline-flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-800 shadow-sm hover:bg-amber-100"><TriangleAlert size={15}/> Излишки</a>
   </span>;
