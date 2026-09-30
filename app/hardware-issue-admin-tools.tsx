@@ -118,7 +118,8 @@ export function HardwareIssueAdminTools() {
   const effectiveDocumentId = documentId || data?.documents.find((row) => row.type === "issue" && row.status !== "completed")?.id || "";
   const rows = data?.documents.filter((row) => row.id === effectiveDocumentId && row.type === "issue") || [];
   const current = rows[0];
-  const canDelete = Boolean(admin && current && !current.oneCId && current.status !== "completed" && rows.every((row) => Number(row.processedQuantity || 0) === 0));
+  const canDelete = Boolean(admin && current);
+  const processedTotal = rows.reduce((sum, row) => sum + Number(row.processedQuantity || 0), 0);
 
   const currentProduct = useMemo(() => {
     if (!data || !barcode) return null;
@@ -203,7 +204,16 @@ export function HardwareIssueAdminTools() {
 
   const remove = async () => {
     if (!current || !canDelete || busy) return;
-    if (!window.confirm(`Удалить заказ ${current.number}?`)) return;
+    const warnings = [
+      `Удалить заявку ${current.number}?`,
+      "",
+      "Это действие доступно только администратору и отменить его нельзя.",
+      processedTotal > 0 ? `По заявке уже выдано: ${processedTotal}. Выданный товар НЕ будет автоматически возвращён на склад.` : "По заявке ещё нет фактической выдачи.",
+      current.oneCId ? `Заявка связана с 1С (${current.oneCId}). Удаление в WMS НЕ отменит исходный документ в 1С.` : "",
+      "История уже выполненных складских движений будет сохранена.",
+    ].filter(Boolean).join("\n");
+    if (!window.confirm(warnings)) return;
+
     setBusy(true);
     try {
       const response = await fetch("/api/warehouse/issues/admin-delete", {
@@ -213,7 +223,7 @@ export function HardwareIssueAdminTools() {
       });
       const body = await response.json() as { error?: string };
       if (!response.ok) throw new Error(body.error || "Не удалось удалить заказ");
-      toast.success(`Заказ ${current.number} удалён`);
+      toast.success(`Заявка ${current.number} удалена администратором`);
       setDocumentId("");
       window.dispatchEvent(new Event("hardware:refresh-now"));
     } catch (error) {
@@ -223,16 +233,16 @@ export function HardwareIssueAdminTools() {
     }
   };
 
-  const statusText = current?.status === "in_progress" ? "Сборка начата" : current?.status === "partial" ? "Выдано частично" : "Новое задание";
-  const statusClass = current?.status === "in_progress" || current?.status === "partial" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600";
+  const statusText = current?.status === "in_progress" ? "Сборка начата" : current?.status === "partial" ? "Выдано частично" : current?.status === "completed" ? "Завершено" : "Новое задание";
+  const statusClass = current?.status === "in_progress" || current?.status === "partial" ? "bg-blue-100 text-blue-700" : current?.status === "completed" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600";
 
   return <>
     {deleteHost && current && createPortal(
       <div className="mb-4 mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 p-3">
         <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClass}`}>{statusText}</span>
-        {admin && canDelete && <button type="button" disabled={busy} onClick={() => void remove()} className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"><Trash2 size={16} />{busy ? "Удаление..." : `Удалить заказ ${current.number}`}</button>}
-        {admin && !canDelete && !current.oneCId && <span className="text-xs text-slate-500">Удаление недоступно после фактической выдачи материала.</span>}
-        {admin && current.oneCId && <span className="text-xs text-slate-500">Документ связан с 1С — удаление только через отмену.</span>}
+        {admin && <button type="button" disabled={busy} onClick={() => void remove()} className="inline-flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"><Trash2 size={16} />{busy ? "Удаление..." : `Удалить заявку ${current.number}`}</button>}
+        {!admin && <span className="text-xs text-slate-500">Удаление заявок доступно только администратору.</span>}
+        {admin && current.oneCId && <span className="text-xs text-amber-700">Связано с 1С: удаление затронет только заявку WMS.</span>}
       </div>, deleteHost)}
 
     {addressHost && createPortal(
