@@ -23,6 +23,8 @@ import { DepartmentAuditRecorder } from "@/app/department-audit-recorder";
 import { HardwareLiveSync } from "@/app/hardware-live-sync";
 import { HardwareIssueAdminTools } from "@/app/hardware-issue-admin-tools";
 import { HardwareIssueProductSearch } from "@/app/hardware-issue-product-search";
+import { HardwareIssueLiveViewSync } from "@/app/hardware-issue-live-view-sync";
+import { HardwareIssuedMaterials } from "@/app/hardware-issued-materials";
 import "./globals.css";
 import "./select-arrows.css";
 import "./brand-logo.css";
@@ -60,6 +62,8 @@ export default function RootLayout({
         <HardwareLiveSync />
         <HardwareIssueAdminTools />
         <HardwareIssueProductSearch />
+        <HardwareIssueLiveViewSync />
+        <HardwareIssuedMaterials />
         <DepartmentAuditRecorder />
         <DepartmentManualProductEnhancer />
         <DepartmentLdspMaterialsEnhancer />
