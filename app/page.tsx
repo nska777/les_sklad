@@ -76,6 +76,23 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
+  useEffect(() => {
+    const onLiveSnapshot = (event: Event) => {
+      const next = (event as CustomEvent<Snapshot>).detail;
+      if (next?.documents && next?.stocks) {
+        setData(next);
+        setLoading(false);
+      }
+    };
+    const refreshNow = () => void loadData();
+    window.addEventListener("hardware:live-snapshot", onLiveSnapshot as EventListener);
+    window.addEventListener("hardware:refresh-now", refreshNow);
+    return () => {
+      window.removeEventListener("hardware:live-snapshot", onLiveSnapshot as EventListener);
+      window.removeEventListener("hardware:refresh-now", refreshNow);
+    };
+  }, [loadData]);
+
   const post = async (payload: Record<string, unknown>) => {
     const response = await fetch("/api/warehouse", {
       method: "POST",
@@ -96,6 +113,7 @@ export default function Home() {
   const occupied = new Set(data.stocks.filter((stock) => stock.quantity > 0).map((stock) => stock.cellId)).size;
   const totalUnits = data.stocks.reduce((sum, stock) => sum + stock.quantity, 0);
   const lowStock = data.products.filter((product) => product.minStock > 0 && (stockByProduct.get(product.id) || 0) <= product.minStock).length;
+  const openIssueCount = new Set(data.documents.filter((row) => row.type === "issue" && row.status !== "completed").map((row) => row.id)).size;
   const pickedProduct = data.products.find((product) => product.id === selectedProduct);
   const pickedCell = data.cells.find((cell) => cell.id === selectedCell);
 
@@ -242,7 +260,7 @@ export default function Home() {
           <TabsTrigger value="scan" className="px-3 py-2"><ListChecks /> Первичный учёт</TabsTrigger>
           <TabsTrigger value="receipt" className="px-3 py-2"><ArrowDownToLine /> Приёмка</TabsTrigger>
           <TabsTrigger value="transfer" className="px-3 py-2"><ArrowRightLeft /> Перемещение</TabsTrigger>
-          <TabsTrigger value="issue" className="px-3 py-2"><ArrowUpFromLine /> Выдача</TabsTrigger>
+          <TabsTrigger value="issue" className="px-3 py-2"><ArrowUpFromLine /> Выдача {openIssueCount > 0 && <span className="ml-1 inline-flex min-w-5 items-center justify-center rounded-full bg-orange-500 px-1.5 py-0.5 text-[11px] font-extrabold leading-none text-white">{openIssueCount}</span>}</TabsTrigger>
           <TabsTrigger value="layout" className="px-3 py-2"><Grid3X3 /> Стеллажи</TabsTrigger>
           <TabsTrigger value="products" className="px-3 py-2"><Boxes /> Материалы</TabsTrigger>
           <TabsTrigger value="history" className="px-3 py-2"><History /> Движения</TabsTrigger>
