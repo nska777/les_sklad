@@ -12,8 +12,14 @@ export async function GET() {
   const forced = process.env.WAREHOUSE_FORCE_OFFLINE === "1" || existsSync(join(dataDir, "FORCE_OFFLINE_TEST"));
   const status = localResilienceStatus();
   const circuit = databaseCircuitState();
-  const databaseOffline = status.database.known && !status.database.online;
-  const protectedOffline = circuit.mode !== "closed";
+
+  const databaseKnown = status.database.known;
+  const databaseOnline = databaseKnown && status.database.online;
+  const databaseOffline = databaseKnown && !status.database.online;
+
+  // A stale/open circuit breaker must not paint the whole UI as offline
+  // after the central database has already recovered successfully.
+  const protectedOffline = !databaseOnline && circuit.mode !== "closed";
 
   return NextResponse.json({
     ...status,
