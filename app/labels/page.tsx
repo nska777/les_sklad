@@ -17,15 +17,15 @@ type ApiResult = { racks: Rack[]; cells: Cell[]; products: Product[]; error?: st
 type Preset = "small" | "medium" | "large" | "custom";
 
 const CELL_PRESETS = {
-  small: { width: 50, height: 125, qr: 34 },
-  medium: { width: 50, height: 125, qr: 40 },
-  large: { width: 50, height: 125, qr: 43 },
+  small: { width: 125, height: 50, qr: 34 },
+  medium: { width: 125, height: 50, qr: 38 },
+  large: { width: 125, height: 50, qr: 41 },
 } as const;
 
 const PRODUCT_PRESETS = {
-  small: { width: 50, height: 125, barcodeHeight: 18 },
-  medium: { width: 50, height: 125, barcodeHeight: 22 },
-  large: { width: 50, height: 125, barcodeHeight: 26 },
+  small: { width: 125, height: 50, barcodeHeight: 18 },
+  medium: { width: 125, height: 50, barcodeHeight: 22 },
+  large: { width: 125, height: 50, barcodeHeight: 26 },
 } as const;
 
 const mmToPx = (mm: number) => Math.max(20, Math.round(mm * 3.78));
@@ -37,8 +37,8 @@ export default function LabelsPage() {
   const [rackId, setRackId] = useState("");
   const [side, setSide] = useState<"all" | "front" | "back">("all");
   const [preset, setPreset] = useState<Preset>("medium");
-  const [customWidth, setCustomWidth] = useState(50);
-  const [customHeight, setCustomHeight] = useState(125);
+  const [customWidth, setCustomWidth] = useState(125);
+  const [customHeight, setCustomHeight] = useState(50);
 
   const load = useCallback(async () => {
     try {
@@ -57,11 +57,11 @@ export default function LabelsPage() {
   useEffect(() => {
     setPreset("medium");
     if (mode === "cells") {
-      setCustomWidth(50);
-      setCustomHeight(125);
+      setCustomWidth(125);
+      setCustomHeight(50);
     } else {
-      setCustomWidth(50);
-      setCustomHeight(125);
+      setCustomWidth(125);
+      setCustomHeight(50);
     }
   }, [mode]);
 
@@ -72,13 +72,13 @@ export default function LabelsPage() {
 
   const size = useMemo(() => {
     if (preset === "custom") {
-      return { width: Math.max(35, customWidth), height: Math.max(50, customHeight) };
+      return { width: Math.max(70, customWidth), height: Math.max(35, customHeight) };
     }
     return mode === "cells" ? CELL_PRESETS[preset] : PRODUCT_PRESETS[preset];
   }, [preset, mode, customWidth, customHeight]);
 
   const qrMm = mode === "cells"
-    ? (preset === "custom" ? Math.max(18, Math.min(size.height - 7, size.width * 0.38)) : CELL_PRESETS[preset].qr)
+    ? (preset === "custom" ? Math.max(24, Math.min(size.height - 8, 41)) : CELL_PRESETS[preset].qr)
     : 0;
   const barcodeHeightMm = mode === "products"
     ? (preset === "custom" ? Math.max(10, Math.min(24, size.height * 0.42)) : PRODUCT_PRESETS[preset].barcodeHeight)
@@ -99,6 +99,7 @@ export default function LabelsPage() {
         html, body {
           width: var(--label-width) !important;
           min-width: var(--label-width) !important;
+          height: var(--label-height) !important;
           margin: 0 !important;
           padding: 0 !important;
           background: white !important;
@@ -133,27 +134,27 @@ export default function LabelsPage() {
         }
         .cell-label {
           display: flex !important;
-          flex-direction: column !important;
+          flex-direction: row !important;
           align-items: center !important;
           justify-content: flex-start !important;
-          text-align: center !important;
-          gap: 2.5mm !important;
+          text-align: left !important;
+          gap: 5mm !important;
         }
         .cell-qr {
           flex: 0 0 var(--qr-size) !important;
           width: var(--qr-size) !important;
           height: var(--qr-size) !important;
-          margin-top: 4mm !important;
+          margin: 0 !important;
         }
         .cell-qr svg {
           width: var(--qr-size) !important;
           height: var(--qr-size) !important;
           display: block !important;
         }
-        .cell-meta { width: 100% !important; min-width: 0 !important; }
+        .cell-meta { min-width: 0 !important; flex: 1 !important; }
         .cell-kind {
           display: block !important;
-          font-size: 8pt !important;
+          font-size: 9pt !important;
           line-height: 1.1 !important;
           letter-spacing: .1em !important;
           color: #475569 !important;
@@ -162,7 +163,7 @@ export default function LabelsPage() {
         }
         .cell-code {
           margin-top: 2mm !important;
-          font-size: 26pt !important;
+          font-size: 30pt !important;
           line-height: 1 !important;
           font-weight: 950 !important;
           letter-spacing: -.035em !important;
@@ -178,42 +179,42 @@ export default function LabelsPage() {
           color: #334155 !important;
         }
         .product-barcode {
-          width: 44mm !important;
-          max-width: 44mm !important;
+          width: 105mm !important;
+          max-width: 105mm !important;
           overflow: visible !important;
-          margin-top: 4mm !important;
+          margin-top: 2mm !important;
         }
         .product-barcode svg {
-          width: 44mm !important;
-          max-width: 44mm !important;
+          width: 105mm !important;
+          max-width: 105mm !important;
           max-height: var(--barcode-height) !important;
           height: var(--barcode-height) !important;
           display: block !important;
           margin: 0 auto !important;
         }
         .label-code {
-          margin-top: 3mm !important;
-          font-size: 13pt !important;
+          margin-top: 1.5mm !important;
+          font-size: 12pt !important;
           line-height: 1.05 !important;
           font-weight: 950 !important;
           overflow-wrap: anywhere !important;
         }
         .product-name {
           width: 100% !important;
-          margin-top: 5mm !important;
+          margin-top: 0 !important;
           font-size: 12pt !important;
-          line-height: 1.18 !important;
+          line-height: 1.12 !important;
           font-weight: 850 !important;
           display: -webkit-box !important;
-          -webkit-line-clamp: 4 !important;
+          -webkit-line-clamp: 2 !important;
           -webkit-box-orient: vertical !important;
           overflow: hidden !important;
         }
-        .product-name + .product-barcode { margin-top: 5mm !important; }
+        .product-name + .product-barcode { margin-top: 2mm !important; }
         .print-label > .label-secondary {
           display: flex !important;
-          margin-top: 3mm !important;
-          font-size: 8pt !important;
+          margin-top: 1.5mm !important;
+          font-size: 7.5pt !important;
           line-height: 1.1 !important;
           color: #475569 !important;
         }
@@ -226,7 +227,7 @@ export default function LabelsPage() {
           <Link href="/" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16} /> Назад в склад</Link>
           <p className="eyebrow">Печать</p>
           <h1 className="page-title">Этикетки склада</h1>
-          <p className="page-description">QR ячеек печатаются горизонтально: код слева, номер ячейки крупно справа. Размер задаётся в миллиметрах.</p>
+          <p className="page-description">Печать под SATO: фактическая этикетка 50 × 125 мм, макет развёрнут горизонтально 125 × 50 мм.</p>
         </div>
         <Button onClick={() => window.print()} className="accent-button"><Printer /> Печать выбранного</Button>
       </div>
@@ -261,9 +262,9 @@ export default function LabelsPage() {
           <div>
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Ruler size={13} /> Размер этикетки</div>
             <NativeSelect value={preset} onChange={(event) => setPreset(event.target.value as Preset)} className="w-full">
-              <NativeSelectOption value="small">Компактная · 50×125</NativeSelectOption>
-              <NativeSelectOption value="medium">Стандарт · 50×125</NativeSelectOption>
-              <NativeSelectOption value="large">Крупная · 50×125</NativeSelectOption>
+              <NativeSelectOption value="small">Компактная · 125×50</NativeSelectOption>
+              <NativeSelectOption value="medium">Стандарт · 125×50</NativeSelectOption>
+              <NativeSelectOption value="large">Крупная · 125×50</NativeSelectOption>
               <NativeSelectOption value="custom">Свой размер</NativeSelectOption>
             </NativeSelect>
           </div>
@@ -271,15 +272,15 @@ export default function LabelsPage() {
           <div>
             <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Фактический размер</div>
             {preset === "custom" ? <div className="grid grid-cols-2 gap-2">
-              <Input type="number" min="35" max="180" value={customWidth} onChange={(e) => setCustomWidth(Number(e.target.value) || 50)} aria-label="Ширина этикетки" />
-              <Input type="number" min="50" max="250" value={customHeight} onChange={(e) => setCustomHeight(Number(e.target.value) || 125)} aria-label="Высота этикетки" />
+              <Input type="number" min="70" max="250" value={customWidth} onChange={(e) => setCustomWidth(Number(e.target.value) || 125)} aria-label="Ширина этикетки" />
+              <Input type="number" min="35" max="180" value={customHeight} onChange={(e) => setCustomHeight(Number(e.target.value) || 50)} aria-label="Высота этикетки" />
             </div> : <div className="flex h-10 items-center rounded-xl border border-black/10 bg-slate-50 px-3 text-sm font-bold">{size.width} × {size.height} мм</div>}
             {preset === "custom" && <div className="mt-1 text-[11px] text-slate-500">Ширина × высота, мм</div>}
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-          <span className="rounded-full bg-slate-100 px-3 py-1.5">Термолента · 50 × 125 мм · без полей</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1.5">SATO · носитель 50 × 125 мм · макет 125 × 50 мм</span>
           <span className="rounded-full bg-slate-100 px-3 py-1.5">Этикетка: {size.width} × {size.height} мм</span>
           {mode === "cells" && <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">Горизонтальная · QR ≈ {Math.round(qrMm)} мм</span>}
           {mode === "products" && <span className="rounded-full bg-orange-50 px-3 py-1.5 text-orange-700">Штрихкод: ≈ {Math.round(barcodeHeightMm)} мм высотой</span>}
