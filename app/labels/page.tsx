@@ -17,15 +17,15 @@ type ApiResult = { racks: Rack[]; cells: Cell[]; products: Product[]; error?: st
 type Preset = "small" | "medium" | "large" | "custom";
 
 const CELL_PRESETS = {
-  small: { width: 70, height: 30, qr: 23 },
-  medium: { width: 85, height: 36, qr: 28 },
-  large: { width: 100, height: 42, qr: 34 },
+  small: { width: 50, height: 125, qr: 34 },
+  medium: { width: 50, height: 125, qr: 40 },
+  large: { width: 50, height: 125, qr: 43 },
 } as const;
 
 const PRODUCT_PRESETS = {
-  small: { width: 65, height: 32, barcodeHeight: 14 },
-  medium: { width: 80, height: 40, barcodeHeight: 18 },
-  large: { width: 100, height: 50, barcodeHeight: 23 },
+  small: { width: 50, height: 125, barcodeHeight: 18 },
+  medium: { width: 50, height: 125, barcodeHeight: 22 },
+  large: { width: 50, height: 125, barcodeHeight: 26 },
 } as const;
 
 const mmToPx = (mm: number) => Math.max(20, Math.round(mm * 3.78));
@@ -37,8 +37,8 @@ export default function LabelsPage() {
   const [rackId, setRackId] = useState("");
   const [side, setSide] = useState<"all" | "front" | "back">("all");
   const [preset, setPreset] = useState<Preset>("medium");
-  const [customWidth, setCustomWidth] = useState(85);
-  const [customHeight, setCustomHeight] = useState(36);
+  const [customWidth, setCustomWidth] = useState(50);
+  const [customHeight, setCustomHeight] = useState(125);
 
   const load = useCallback(async () => {
     try {
@@ -57,11 +57,11 @@ export default function LabelsPage() {
   useEffect(() => {
     setPreset("medium");
     if (mode === "cells") {
-      setCustomWidth(85);
-      setCustomHeight(36);
+      setCustomWidth(50);
+      setCustomHeight(125);
     } else {
-      setCustomWidth(80);
-      setCustomHeight(40);
+      setCustomWidth(50);
+      setCustomHeight(125);
     }
   }, [mode]);
 
@@ -72,7 +72,7 @@ export default function LabelsPage() {
 
   const size = useMemo(() => {
     if (preset === "custom") {
-      return { width: Math.max(55, customWidth), height: Math.max(24, customHeight) };
+      return { width: Math.max(35, customWidth), height: Math.max(50, customHeight) };
     }
     return mode === "cells" ? CELL_PRESETS[preset] : PRODUCT_PRESETS[preset];
   }, [preset, mode, customWidth, customHeight]);
@@ -93,50 +93,130 @@ export default function LabelsPage() {
 
   return <main className="min-h-screen px-3 py-4 text-[var(--foreground)] sm:px-5 lg:px-7" style={printStyle}>
     <style jsx global>{`
-      @page { size: A4; margin: 8mm; }
+      @page { size: ${size.width}mm ${size.height}mm; margin: 0; }
       @media print {
         .no-print { display: none !important; }
-        html, body { background: white !important; }
+        html, body {
+          width: var(--label-width) !important;
+          min-width: var(--label-width) !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+        }
+        main { margin: 0 !important; padding: 0 !important; min-height: 0 !important; }
         .print-grid {
-          display: grid !important;
-          grid-template-columns: repeat(auto-fill, var(--label-width)) !important;
-          grid-auto-rows: var(--label-height) !important;
-          justify-content: start !important;
-          align-content: start !important;
-          gap: 4mm !important;
+          display: block !important;
+          width: var(--label-width) !important;
+          margin: 0 !important;
           padding: 0 !important;
         }
         .print-label {
           width: var(--label-width) !important;
           height: var(--label-height) !important;
-          min-height: 0 !important;
+          min-height: var(--label-height) !important;
           max-height: var(--label-height) !important;
-          break-inside: avoid !important;
-          page-break-inside: avoid !important;
+          margin: 0 !important;
+          padding: 3mm !important;
+          border: 0 !important;
+          border-radius: 0 !important;
           box-shadow: none !important;
-          border: 0.35mm solid #111 !important;
-          border-radius: 2mm !important;
-          padding: 2.5mm !important;
           overflow: hidden !important;
           box-sizing: border-box !important;
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
+          break-after: page !important;
+          page-break-after: always !important;
+        }
+        .print-label:last-child {
+          break-after: auto !important;
+          page-break-after: auto !important;
         }
         .cell-label {
           display: flex !important;
-          flex-direction: row !important;
+          flex-direction: column !important;
           align-items: center !important;
           justify-content: flex-start !important;
-          text-align: left !important;
-          gap: 4mm !important;
+          text-align: center !important;
+          gap: 2.5mm !important;
         }
-        .cell-qr { flex: 0 0 var(--qr-size) !important; width: var(--qr-size) !important; height: var(--qr-size) !important; }
-        .cell-qr svg { width: var(--qr-size) !important; height: var(--qr-size) !important; display: block !important; }
-        .cell-meta { min-width: 0 !important; flex: 1 !important; }
-        .cell-kind { display: block !important; font-size: 6.5pt !important; line-height: 1 !important; letter-spacing: .12em !important; color: #64748b !important; font-weight: 800 !important; text-transform: uppercase !important; }
-        .cell-code { margin-top: 1.6mm !important; font-size: 24pt !important; line-height: .95 !important; font-weight: 950 !important; letter-spacing: -.04em !important; color: #020617 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
-        .product-barcode svg { width: 100% !important; max-height: var(--barcode-height) !important; height: var(--barcode-height) !important; }
-        .label-secondary { display: none !important; }
-        .label-code { margin-top: 1.5mm !important; font-size: 10pt !important; line-height: 1 !important; }
-        .product-name { margin-top: 1.5mm !important; font-size: 8pt !important; line-height: 1.15 !important; }
+        .cell-qr {
+          flex: 0 0 var(--qr-size) !important;
+          width: var(--qr-size) !important;
+          height: var(--qr-size) !important;
+          margin-top: 4mm !important;
+        }
+        .cell-qr svg {
+          width: var(--qr-size) !important;
+          height: var(--qr-size) !important;
+          display: block !important;
+        }
+        .cell-meta { width: 100% !important; min-width: 0 !important; }
+        .cell-kind {
+          display: block !important;
+          font-size: 8pt !important;
+          line-height: 1.1 !important;
+          letter-spacing: .1em !important;
+          color: #475569 !important;
+          font-weight: 800 !important;
+          text-transform: uppercase !important;
+        }
+        .cell-code {
+          margin-top: 2mm !important;
+          font-size: 26pt !important;
+          line-height: 1 !important;
+          font-weight: 950 !important;
+          letter-spacing: -.035em !important;
+          color: #020617 !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+        }
+        .cell-meta .label-secondary {
+          display: block !important;
+          margin-top: 2mm !important;
+          font-size: 8.5pt !important;
+          line-height: 1.2 !important;
+          color: #334155 !important;
+        }
+        .product-barcode {
+          width: 44mm !important;
+          max-width: 44mm !important;
+          overflow: visible !important;
+          margin-top: 4mm !important;
+        }
+        .product-barcode svg {
+          width: 44mm !important;
+          max-width: 44mm !important;
+          max-height: var(--barcode-height) !important;
+          height: var(--barcode-height) !important;
+          display: block !important;
+          margin: 0 auto !important;
+        }
+        .label-code {
+          margin-top: 3mm !important;
+          font-size: 13pt !important;
+          line-height: 1.05 !important;
+          font-weight: 950 !important;
+          overflow-wrap: anywhere !important;
+        }
+        .product-name {
+          width: 100% !important;
+          margin-top: 5mm !important;
+          font-size: 12pt !important;
+          line-height: 1.18 !important;
+          font-weight: 850 !important;
+          display: -webkit-box !important;
+          -webkit-line-clamp: 4 !important;
+          -webkit-box-orient: vertical !important;
+          overflow: hidden !important;
+        }
+        .product-name + .product-barcode { margin-top: 5mm !important; }
+        .print-label > .label-secondary {
+          display: flex !important;
+          margin-top: 3mm !important;
+          font-size: 8pt !important;
+          line-height: 1.1 !important;
+          color: #475569 !important;
+        }
       }
     `}</style>
 
@@ -181,9 +261,9 @@ export default function LabelsPage() {
           <div>
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500"><Ruler size={13} /> Размер этикетки</div>
             <NativeSelect value={preset} onChange={(event) => setPreset(event.target.value as Preset)} className="w-full">
-              <NativeSelectOption value="small">Маленькая</NativeSelectOption>
-              <NativeSelectOption value="medium">Средняя</NativeSelectOption>
-              <NativeSelectOption value="large">Большая</NativeSelectOption>
+              <NativeSelectOption value="small">Компактная · 50×125</NativeSelectOption>
+              <NativeSelectOption value="medium">Стандарт · 50×125</NativeSelectOption>
+              <NativeSelectOption value="large">Крупная · 50×125</NativeSelectOption>
               <NativeSelectOption value="custom">Свой размер</NativeSelectOption>
             </NativeSelect>
           </div>
@@ -191,15 +271,15 @@ export default function LabelsPage() {
           <div>
             <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Фактический размер</div>
             {preset === "custom" ? <div className="grid grid-cols-2 gap-2">
-              <Input type="number" min="55" max="180" value={customWidth} onChange={(e) => setCustomWidth(Number(e.target.value) || 55)} aria-label="Ширина этикетки" />
-              <Input type="number" min="24" max="100" value={customHeight} onChange={(e) => setCustomHeight(Number(e.target.value) || 24)} aria-label="Высота этикетки" />
+              <Input type="number" min="35" max="180" value={customWidth} onChange={(e) => setCustomWidth(Number(e.target.value) || 50)} aria-label="Ширина этикетки" />
+              <Input type="number" min="50" max="250" value={customHeight} onChange={(e) => setCustomHeight(Number(e.target.value) || 125)} aria-label="Высота этикетки" />
             </div> : <div className="flex h-10 items-center rounded-xl border border-black/10 bg-slate-50 px-3 text-sm font-bold">{size.width} × {size.height} мм</div>}
             {preset === "custom" && <div className="mt-1 text-[11px] text-slate-500">Ширина × высота, мм</div>}
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
-          <span className="rounded-full bg-slate-100 px-3 py-1.5">A4 · поля 8 мм</span>
+          <span className="rounded-full bg-slate-100 px-3 py-1.5">Термолента · 50 × 125 мм · без полей</span>
           <span className="rounded-full bg-slate-100 px-3 py-1.5">Этикетка: {size.width} × {size.height} мм</span>
           {mode === "cells" && <span className="rounded-full bg-blue-50 px-3 py-1.5 text-blue-700">Горизонтальная · QR ≈ {Math.round(qrMm)} мм</span>}
           {mode === "products" && <span className="rounded-full bg-orange-50 px-3 py-1.5 text-orange-700">Штрихкод: ≈ {Math.round(barcodeHeightMm)} мм высотой</span>}
