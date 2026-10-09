@@ -222,10 +222,20 @@ button, input, select { font: inherit; }
 @media (min-width: 640px) and (max-width: 1100px) { .onboarding-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 @media print {
-  @page { size: A4; margin: 0; }
-  html, body { height: 297mm; width: 210mm; background: white !important; }
-  body * { visibility: hidden !important; }
-  .qr-print-dialog, .qr-print-dialog *, .qr-print-sheet, .qr-print-sheet * { visibility: visible !important; }
+  /*
+   * Legacy A4 QR-dialog print rules must not force every route to 210×297 mm.
+   * The warehouse label page defines its own 50×125 mm media size.
+   */
+  body:has(.qr-print-dialog) {
+    height: 297mm;
+    width: 210mm;
+    background: white !important;
+  }
+  body:has(.qr-print-dialog) * { visibility: hidden !important; }
+  body:has(.qr-print-dialog) .qr-print-dialog,
+  body:has(.qr-print-dialog) .qr-print-dialog *,
+  body:has(.qr-print-dialog) .qr-print-sheet,
+  body:has(.qr-print-dialog) .qr-print-sheet * { visibility: visible !important; }
   .qr-print-dialog { position: fixed !important; inset: 0 !important; display: block !important; height: 297mm !important; width: 210mm !important; max-width: none !important; transform: none !important; border: 0 !important; border-radius: 0 !important; background: white !important; padding: 0 !important; box-shadow: none !important; }
   .qr-print-dialog .no-print, .qr-print-dialog > button { display: none !important; }
   .qr-print-sheet { display: flex !important; height: 297mm; width: 210mm; align-items: center; justify-content: center; }
