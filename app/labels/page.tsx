@@ -87,19 +87,21 @@ export default function LabelsPage() {
   const printStyle = {
     "--label-width": `${size.width}mm`,
     "--label-height": `${size.height}mm`,
+    "--paper-width": "50mm",
+    "--paper-height": "125mm",
     "--qr-size": `${qrMm}mm`,
     "--barcode-height": `${barcodeHeightMm}mm`,
   } as React.CSSProperties;
 
   return <main className="min-h-screen px-3 py-4 text-[var(--foreground)] sm:px-5 lg:px-7" style={printStyle}>
     <style jsx global>{`
-      @page { size: ${size.width}mm ${size.height}mm; margin: 0; }
+      @page { size: 50mm 125mm; margin: 0; }
       @media print {
         .no-print { display: none !important; }
         html, body {
-          width: var(--label-width) !important;
-          min-width: var(--label-width) !important;
-          height: var(--label-height) !important;
+          width: var(--paper-width) !important;
+          min-width: var(--paper-width) !important;
+          height: var(--paper-height) !important;
           margin: 0 !important;
           padding: 0 !important;
           background: white !important;
@@ -107,17 +109,18 @@ export default function LabelsPage() {
         main { margin: 0 !important; padding: 0 !important; min-height: 0 !important; }
         .print-grid {
           display: block !important;
-          width: var(--label-width) !important;
+          width: var(--paper-width) !important;
           margin: 0 !important;
           padding: 0 !important;
         }
         .print-label {
-          width: var(--label-width) !important;
-          height: var(--label-height) !important;
-          min-height: var(--label-height) !important;
-          max-height: var(--label-height) !important;
+          position: relative !important;
+          width: var(--paper-width) !important;
+          height: var(--paper-height) !important;
+          min-height: var(--paper-height) !important;
+          max-height: var(--paper-height) !important;
           margin: 0 !important;
-          padding: 3mm !important;
+          padding: 0 !important;
           border: 0 !important;
           border-radius: 0 !important;
           box-shadow: none !important;
@@ -132,7 +135,23 @@ export default function LabelsPage() {
           break-after: auto !important;
           page-break-after: auto !important;
         }
-        .cell-label {
+        .print-label-content {
+          position: absolute !important;
+          top: 0 !important;
+          left: var(--paper-width) !important;
+          width: var(--label-width) !important;
+          height: var(--label-height) !important;
+          min-height: var(--label-height) !important;
+          max-height: var(--label-height) !important;
+          padding: 3mm !important;
+          margin: 0 !important;
+          box-sizing: border-box !important;
+          transform: rotate(90deg) !important;
+          transform-origin: top left !important;
+          background: white !important;
+          overflow: hidden !important;
+        }
+        .cell-label .print-label-content {
           display: flex !important;
           flex-direction: row !important;
           align-items: center !important;
@@ -211,7 +230,7 @@ export default function LabelsPage() {
           overflow: hidden !important;
         }
         .product-name + .product-barcode { margin-top: 2mm !important; }
-        .print-label > .label-secondary {
+        .print-label-content > .label-secondary {
           display: flex !important;
           margin-top: 1.5mm !important;
           font-size: 7.5pt !important;
@@ -227,7 +246,7 @@ export default function LabelsPage() {
           <Link href="/" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16} /> Назад в склад</Link>
           <p className="eyebrow">Печать</p>
           <h1 className="page-title">Этикетки склада</h1>
-          <p className="page-description">Печать под SATO: фактическая этикетка 50 × 125 мм, макет развёрнут горизонтально 125 × 50 мм.</p>
+          <p className="page-description">SATO 50 × 125 мм: браузер получает реальный размер носителя 50 × 125 мм, а макет поворачивается внутри страницы без уменьшения.</p>
         </div>
         <Button onClick={() => window.print()} className="accent-button"><Printer /> Печать выбранного</Button>
       </div>
@@ -288,24 +307,28 @@ export default function LabelsPage() {
       </section>
 
       {loading ? <div className="panel flex min-h-80 items-center justify-center"><Loader2 className="animate-spin" /></div> : mode === "cells" ? <section className="print-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {cells.map((cell) => <article key={cell.id} className="print-label cell-label flex flex-row items-center gap-4 rounded-2xl border bg-white p-3 text-left shadow-sm" style={{ width: `${size.width}mm`, minHeight: `${size.height}mm` }}>
-          <div className="cell-qr shrink-0"><QRCodeSVG value={cell.code} size={mmToPx(qrMm)} level="M" /></div>
-          <div className="cell-meta min-w-0 flex-1">
-            <div className="cell-kind text-[10px] font-bold uppercase tracking-[.16em] text-slate-400">QR-код ячейки</div>
-            <div className="cell-code mt-1.5 truncate font-mono text-4xl font-black tracking-[-0.045em] text-slate-950">{cell.code}</div>
-            <div className="label-secondary mt-2 text-[11px] text-slate-600">{activeRack?.name || activeRack?.code} · {cell.side === "front" ? "Лицевая" : "Задняя"}</div>
-            <div className="label-secondary mt-1 text-[10px] text-slate-500">Полка {cell.rowIndex + 1} · место {String.fromCharCode(65 + cell.columnIndex)}</div>
-            <div className="label-secondary mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500"><QrCode size={11} /> РУССКИЙ ЛЕС · СКЛАД</div>
+        {cells.map((cell) => <article key={cell.id} className="print-label cell-label rounded-2xl border bg-white shadow-sm" style={{ width: `${size.width}mm`, minHeight: `${size.height}mm` }}>
+          <div className="print-label-content flex flex-row items-center gap-4 p-3 text-left">
+            <div className="cell-qr shrink-0"><QRCodeSVG value={cell.code} size={mmToPx(qrMm)} level="M" /></div>
+            <div className="cell-meta min-w-0 flex-1">
+              <div className="cell-kind text-[10px] font-bold uppercase tracking-[.16em] text-slate-400">QR-код ячейки</div>
+              <div className="cell-code mt-1.5 truncate font-mono text-4xl font-black tracking-[-0.045em] text-slate-950">{cell.code}</div>
+              <div className="label-secondary mt-2 text-[11px] text-slate-600">{activeRack?.name || activeRack?.code} · {cell.side === "front" ? "Лицевая" : "Задняя"}</div>
+              <div className="label-secondary mt-1 text-[10px] text-slate-500">Полка {cell.rowIndex + 1} · место {String.fromCharCode(65 + cell.columnIndex)}</div>
+              <div className="label-secondary mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500"><QrCode size={11} /> РУССКИЙ ЛЕС · СКЛАД</div>
+            </div>
           </div>
         </article>)}
       </section> : <section className="print-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {data.products.map((product) => <article key={product.id} className="print-label flex flex-col items-center justify-center rounded-2xl border bg-white p-4 text-center shadow-sm" style={{ width: `${size.width}mm`, minHeight: `${size.height}mm` }}>
-          <div className="product-name line-clamp-2 text-sm font-bold">{product.name}</div>
-          <div className="product-barcode mt-2 w-full overflow-hidden">
-            <ReactBarcode value={product.barcode || product.sku} format="CODE128" width={1.25} height={mmToPx(barcodeHeightMm)} displayValue={false} margin={0} />
+        {data.products.map((product) => <article key={product.id} className="print-label rounded-2xl border bg-white shadow-sm" style={{ width: `${size.width}mm`, minHeight: `${size.height}mm` }}>
+          <div className="print-label-content flex flex-col items-center justify-center p-4 text-center">
+            <div className="product-name line-clamp-2 text-sm font-bold">{product.name}</div>
+            <div className="product-barcode mt-2 w-full overflow-hidden">
+              <ReactBarcode value={product.barcode || product.sku} format="CODE128" width={1.25} height={mmToPx(barcodeHeightMm)} displayValue={false} margin={0} />
+            </div>
+            <div className="label-code mt-2 font-mono text-sm font-black">{product.sku}</div>
+            <div className="label-secondary mt-1 flex items-center gap-1 text-[10px] text-slate-500"><Barcode size={12} /> Постоянный код материала</div>
           </div>
-          <div className="label-code mt-2 font-mono text-sm font-black">{product.sku}</div>
-          <div className="label-secondary mt-1 flex items-center gap-1 text-[10px] text-slate-500"><Barcode size={12} /> Постоянный код материала</div>
         </article>)}
       </section>}
 
