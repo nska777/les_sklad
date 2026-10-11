@@ -17,12 +17,21 @@ export default function DepartmentsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState<WarehouseCode | null>(null);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    void fetch("/api/auth/me", { cache: "no-store" })
-      .then(async (response) => response.ok ? (await response.json() as { user?: Me }).user || null : null)
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    void fetch("/api/auth/me", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (response.status === 401) { window.location.replace("/login"); return null; }
+        if (!response.ok) throw new Error(`Ошибка авторизации: HTTP ${response.status}`);
+        return (await response.json() as { user?: Me }).user || null;
+      })
       .then(setMe)
-      .finally(() => setLoading(false));
+      .catch((error: unknown) => setLoadError(error instanceof Error && error.name === "AbortError" ? "Сервер авторизации не ответил за 8 секунд." : error instanceof Error ? error.message : "Ошибка соединения"))
+      .finally(() => { window.clearTimeout(timeout); setLoading(false); });
+    return () => { window.clearTimeout(timeout); controller.abort(); };
   }, []);
 
   const available = useMemo(() => {
@@ -46,6 +55,7 @@ export default function DepartmentsPage() {
   };
 
   if (loading) return <main className="flex min-h-screen items-center justify-center"><Loader2 className="animate-spin text-orange-500" size={34} /></main>;
+  if (loadError) return <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center"><h1 className="text-xl font-bold">Не удалось загрузить список складов</h1><p className="text-slate-600">{loadError}</p><button className="rounded-xl bg-slate-900 px-5 py-3 font-semibold text-white" onClick={() => window.location.reload()}>Повторить загрузку</button></main>;
 
   return <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,.95),rgba(244,246,241,.9)_38%,rgba(236,239,232,.96)_100%)] px-4 py-8 text-slate-950 sm:px-6 sm:py-12">
     <div className="mx-auto max-w-6xl">
