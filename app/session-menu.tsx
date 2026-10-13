@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Boxes, Layers3, LogOut, PaintBucket, Settings, ShieldCheck } from "lucide-react";
+import { Boxes, Factory, Layers3, LogOut, PaintBucket, Settings, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type WarehouseCode = "hardware" | "paint" | "ldsp";
+type WarehouseCode = "hardware" | "paint" | "ldsp" | "semi";
 type User = { name: string; role: "admin" | "manager" | "storekeeper" | "viewer"; warehouse: WarehouseCode; warehouses: WarehouseCode[] };
 const roleLabel: Record<User["role"], string> = { admin: "Администратор", manager: "Заведующий", storekeeper: "Кладовщик", viewer: "Просмотр" };
-const warehouseLabel: Record<WarehouseCode, string> = { hardware: "Фурнитура", paint: "Краска", ldsp: "ЛДСП" };
-const warehouseIcon = { hardware: Boxes, paint: PaintBucket, ldsp: Layers3 } as const;
+const warehouseLabel: Record<WarehouseCode, string> = { hardware: "Фурнитура", paint: "Краска", ldsp: "ЛДСП", semi: "Полуфабрикаты" };
+const warehouseIcon = { hardware: Boxes, paint: PaintBucket, ldsp: Layers3, semi: Factory } as const;
 
 export function SessionMenu() {
   const [user, setUser] = useState<User | null>(null);
