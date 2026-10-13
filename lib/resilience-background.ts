@@ -94,7 +94,7 @@ async function replayHardware() {
   }
 }
 
-async function replayDepartment(warehouse: "paint" | "ldsp") {
+async function replayDepartment(warehouse: "paint" | "ldsp" | "semi") {
   if (!canUseCentralDatabase()) return;
   const scope = `department:${warehouse}:operations`;
   const items = claimPendingOperations(scope, replayBatchSize);
@@ -153,6 +153,7 @@ export async function runBackgroundSyncOnce() {
     await replayHardware();
     await replayDepartment("paint");
     await replayDepartment("ldsp");
+    await replayDepartment("semi");
   } finally {
     loopRunning = false;
   }
