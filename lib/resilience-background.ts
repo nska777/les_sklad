@@ -108,7 +108,7 @@ async function replayDepartment(warehouse: "paint" | "ldsp" | "semi") {
       const request = new NextRequest("http://127.0.0.1:3000/api/department-warehouse", {
         method: "POST",
         headers: headersFor(operator, warehouse),
-        body: JSON.stringify(item.payload),
+        body: JSON.stringify({ ...item.payload, _operationId: item.id }),
       });
       const response = await livePost(request);
       if (!response.ok) {
