@@ -132,7 +132,7 @@ export function claimPendingOperations(scope: string, limit = 20): QueuedOperati
     const rows = db.prepare(`
       SELECT id, scope, action, payload, status, attempts, created_at, last_error, synced_at
       FROM sync_queue
-      WHERE scope = ? AND status IN ('pending','error')
+      WHERE scope = ? AND (status = 'pending' OR (status = 'error' AND attempts < 3))
       ORDER BY created_at ASC
       LIMIT ?
     `).all(scope, limit) as Array<Record<string, unknown>>;
