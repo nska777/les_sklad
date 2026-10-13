@@ -173,24 +173,56 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "receive") {
-      const operationId = clean(body._operationId);
-      if (operationId) {
-        const existing = await db.select({ id: departmentMovements.id }).from(departmentMovements)
-          .where(and(eq(departmentMovements.id, operationId), eq(departmentMovements.warehouseCode, ctx.warehouseCode))).limit(1);
-        if (existing.length) return NextResponse.json({ ok: true, alreadyApplied: true });
-      }
+      const operationId = clean(body._operationId) || crypto.randomUUID();
       const productId = clean(body.productId), cellId = clean(body.cellId), quantity = amount(body.quantity);
-      const [product, cell] = await Promise.all([ownedProduct(db, ctx.warehouseCode, productId), ownedCell(db, ctx.warehouseCode, cellId)]);
-      if (!product || quantity <= 0 || (cellId && !cell)) return NextResponse.json({ error: "Проверьте материал, место хранения и количество" }, { status: 400 });
-      if (!cellId) {
-        await db.insert(departmentUnplacedStocks).values({ warehouseCode: ctx.warehouseCode, productId, quantity, updatedAt: new Date().toISOString() })
-          .onConflictDoUpdate({ target: [departmentUnplacedStocks.warehouseCode, departmentUnplacedStocks.productId], set: { quantity: sql`${departmentUnplacedStocks.quantity} + ${quantity}`, updatedAt: new Date().toISOString() } });
-        await db.insert(departmentMovements).values({ id: operationId || crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: "Приход", productId, fromCellId: null, toCellId: null, quantity, recipient: "", comment: clean(body.comment), operator: ctx.operator, documentNumber: clean(body.documentNumber), sourceName: clean(body.sourceName), sourceLocation: clean(body.sourceLocation), batchId: "" });
-        return NextResponse.json({ ok: true, unplaced: true });
+      const [product, cell] = await Promise.all([
+        ownedProduct(db, ctx.warehouseCode, productId),
+        cellId ? ownedCell(db, ctx.warehouseCode, cellId) : Promise.resolve(null),
+      ]);
+      if (!product || !Number.isFinite(quantity) || quantity <= 0 || (cellId && (!cell || cell.blocked))) {
+        return NextResponse.json({ error: "Проверьте материал, место хранения и количество" }, { status: 400 });
       }
-      await setStock(db, ctx.warehouseCode, productId, cellId, await getStock(db, ctx.warehouseCode, productId, cellId) + quantity);
-      await db.insert(departmentMovements).values({ id: operationId || crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: "Приход", productId, fromCellId: null, toCellId: cellId, quantity, recipient: "", comment: clean(body.comment), operator: ctx.operator, documentNumber: clean(body.documentNumber), sourceName: clean(body.sourceName), sourceLocation: clean(body.sourceLocation), batchId: "" });
-      return NextResponse.json({ ok: true });
+      // One atomic SQL statement: the unique movement ID gates the stock increment.
+      // Concurrent retries with the same operation ID cannot increment stock twice.
+      const result = cellId
+        ? await db.execute(sql`
+            WITH recorded AS (
+              INSERT INTO department_movements
+                (id, warehouse_code, type, product_id, to_cell_id, quantity,
+                 comment, operator, document_number, source_name, source_location)
+              VALUES (${operationId}, ${ctx.warehouseCode}, 'Приход', ${productId},
+                      ${cellId}, ${quantity}, ${clean(body.comment)}, ${ctx.operator},
+                      ${clean(body.documentNumber)}, ${clean(body.sourceName)}, ${clean(body.sourceLocation)})
+              ON CONFLICT (id) DO NOTHING
+              RETURNING warehouse_code, product_id, to_cell_id, quantity
+            )
+            INSERT INTO department_stocks (warehouse_code, product_id, cell_id, quantity)
+            SELECT warehouse_code, product_id, to_cell_id, quantity FROM recorded
+            ON CONFLICT (warehouse_code, product_id, cell_id)
+            DO UPDATE SET quantity = department_stocks.quantity + EXCLUDED.quantity,
+                          updated_at = CURRENT_TIMESTAMP
+            RETURNING product_id
+          `)
+        : await db.execute(sql`
+            WITH recorded AS (
+              INSERT INTO department_movements
+                (id, warehouse_code, type, product_id, quantity,
+                 comment, operator, document_number, source_name, source_location)
+              VALUES (${operationId}, ${ctx.warehouseCode}, 'Приход', ${productId},
+                      ${quantity}, ${clean(body.comment)}, ${ctx.operator},
+                      ${clean(body.documentNumber)}, ${clean(body.sourceName)}, ${clean(body.sourceLocation)})
+              ON CONFLICT (id) DO NOTHING
+              RETURNING warehouse_code, product_id, quantity
+            )
+            INSERT INTO department_unplaced_stocks (warehouse_code, product_id, quantity)
+            SELECT warehouse_code, product_id, quantity FROM recorded
+            ON CONFLICT (warehouse_code, product_id)
+            DO UPDATE SET quantity = department_unplaced_stocks.quantity + EXCLUDED.quantity,
+                          updated_at = CURRENT_TIMESTAMP
+            RETURNING product_id
+          `);
+      if (!result.rows.length) return NextResponse.json({ ok: true, alreadyApplied: true });
+      return NextResponse.json({ ok: true, unplaced: !cellId });
     }
 
     if (action === "placeUnplaced") {
