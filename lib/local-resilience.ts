@@ -201,6 +201,22 @@ export function getCentralDatabaseState() {
   };
 }
 
+export function syncQueueDetails() {
+  const rows = getLocalDb().prepare(`
+    SELECT scope, action, status, attempts, last_error, created_at
+    FROM sync_queue WHERE status IN ('pending','error','syncing')
+    ORDER BY created_at DESC LIMIT 50
+  `).all() as Array<{scope:string;action:string;status:string;attempts:number;last_error:string;created_at:string}>;
+  return rows.map((row) => ({
+    warehouse: row.scope.startsWith("department:") ? row.scope.split(":")[1] : "hardware",
+    action: row.action,
+    status: row.status,
+    attempts: row.attempts,
+    error: row.last_error,
+    createdAt: row.created_at,
+  }));
+}
+
 export function localResilienceStatus() {
   const db = getLocalDb();
   const pending = Number((db.prepare("SELECT COUNT(*) AS count FROM sync_queue WHERE status IN ('pending','error','syncing')").get() as { count?: number } | undefined)?.count || 0);
