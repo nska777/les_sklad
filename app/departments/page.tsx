@@ -19,6 +19,13 @@ export default function DepartmentsPage() {
   const [switching, setSwitching] = useState<WarehouseCode | null>(null);
 
   useEffect(() => {
+    const reset = () => setSwitching(null);
+    window.addEventListener("pageshow", reset);
+    window.addEventListener("popstate", reset);
+    return () => { window.removeEventListener("pageshow", reset); window.removeEventListener("popstate", reset); };
+  }, []);
+
+  useEffect(() => {
     void fetch("/api/auth/me", { cache: "no-store" })
       .then(async (response) => response.ok ? (await response.json() as { user?: Me }).user || null : null)
       .then(setMe)
@@ -31,16 +38,22 @@ export default function DepartmentsPage() {
   }, [me]);
 
   const openWarehouse = async (warehouse: WarehouseCode) => {
+    if (switching) return;
     setSwitching(warehouse);
+    try {
     const response = await fetch("/api/auth/switch-warehouse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ warehouse }),
     });
-    const body = await response.json() as { redirect?: string; error?: string };
+    const body = await response.json().catch(() => ({})) as { redirect?: string; error?: string };
     if (response.ok) window.location.href = body.redirect || (warehouse === "hardware" ? "/warehouse" : `/department/${warehouse}`);
     else {
       alert(body.error || "Не удалось открыть склад");
+      setSwitching(null);
+    }
+    } catch {
+      alert("Не удалось переключить склад. Проверьте соединение и повторите попытку.");
       setSwitching(null);
     }
   };
