@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { databaseCircuitState } from "@/lib/db-circuit-breaker";
-import { localResilienceStatus } from "@/lib/local-resilience";
+import { localResilienceStatus, syncQueueDetails } from "@/lib/local-resilience";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,8 @@ export async function GET() {
   const forced = process.env.WAREHOUSE_FORCE_OFFLINE === "1" || existsSync(join(dataDir, "FORCE_OFFLINE_TEST"));
   const status = localResilienceStatus();
   const circuit = databaseCircuitState();
+  const operations = syncQueueDetails();
+  const errors = operations.filter((item) => item.status === "error").length;
 
   const databaseKnown = status.database.known;
   const databaseOnline = databaseKnown && status.database.online;
@@ -24,7 +26,9 @@ export async function GET() {
   return NextResponse.json({
     ...status,
     circuit,
-    mode: forced || databaseOffline || protectedOffline ? "offline" : status.pending > 0 ? "syncing" : "online",
+    operations,
+    errors,
+    mode: forced || databaseOffline || protectedOffline ? "offline" : errors > 0 ? "error" : status.pending > 0 ? "syncing" : "online",
     forced,
   });
 }
