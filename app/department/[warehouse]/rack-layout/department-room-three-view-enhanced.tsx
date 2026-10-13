@@ -326,7 +326,7 @@ export function DepartmentRoomThreeView({
 
     </div>, document.body)}
     {activeCell && qrExpanded && typeof document !== "undefined" && createPortal(
-      {qrExpanded && <div className="fixed inset-0 flex items-center justify-center bg-slate-950/75 p-4" style={{ zIndex: 2147483647, isolation: "isolate" }} onMouseDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setQrExpanded(false); }} onClick={(e) => e.stopPropagation()}>
+      <div className="fixed inset-0 flex items-center justify-center bg-slate-950/75 p-4" style={{ zIndex: 2147483647, isolation: "isolate" }} onMouseDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setQrExpanded(false); }} onClick={(e) => e.stopPropagation()}>
         <div className="relative w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
           <button type="button" className="absolute right-4 top-4 rounded-xl bg-slate-100 p-2" onClick={() => setQrExpanded(false)} aria-label="Закрыть"><X/></button>
           <h3 className="pr-12 text-xl font-black">QR-код ячейки {activeCell.code}</h3>
@@ -342,7 +342,7 @@ export function DepartmentRoomThreeView({
             popup.document.close(); popup.focus();
           }}><Printer size={18}/> Предпросмотр и печать · 125 × 50 мм</button>
         </div>
-      </div>}
+      </div>
     , document.body)}
   </>;
 }
