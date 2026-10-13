@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { createPortal } from "react-dom";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { QRCodeSVG } from "qrcode.react";
-import { ZoomableQr } from "@/components/zoomable-qr";
+import { Printer } from "lucide-react";
 import { ProductBarcode } from "@/components/product-barcode";
 import { ArrowRightLeft, History, PackagePlus, SlidersHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
@@ -113,6 +113,8 @@ export function DepartmentRoomThreeView({
   const cameraStateRef = useRef<CameraState | null>(null);
   const [activeCell, setActiveCell] = useState<Cell | null>(null);
   const [mode, setMode] = useState<ModalMode>("contents");
+  const [qrExpanded, setQrExpanded] = useState(false);
+  const qrPrintRef = useRef<HTMLDivElement>(null);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [viewStocks, setViewStocks] = useState<Stock[]>(stocks);
   const [busy, setBusy] = useState(false);
@@ -152,7 +154,7 @@ export function DepartmentRoomThreeView({
   };
 
   const openCell = useCallback((cell: Cell) => {
-    onCellClick(cell); setActiveCell(cell); setMode("contents");
+    onCellClick(cell); setActiveCell(cell); setQrExpanded(false); setMode("contents");
     setProductSearch(""); setAddProductId(""); setMoveProductId(""); setTargetCellId(""); setMoveQty("");
     void loadSnapshot().catch((error) => toast.error(error instanceof Error ? error.message : "Не удалось загрузить данные"));
   }, [loadSnapshot, onCellClick]);
@@ -307,7 +309,7 @@ export function DepartmentRoomThreeView({
       <div className="max-h-[92vh] w-full max-w-[980px] overflow-auto rounded-[28px] border bg-white p-5 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-4"><div><div className="text-xs font-black uppercase tracking-[.14em] text-blue-600">Ячейка / место хранения</div><h2 className="mt-1 text-2xl font-black">{activeCell.code}</h2><p className="mt-1 text-sm text-slate-500">{activeStocks.length} позиций · {activeStocks.length ? "Занята" : "Свободна"}</p></div><button type="button" onClick={() => setActiveCell(null)} className="rounded-xl p-2 hover:bg-slate-100"><X/></button></div>
         <div className="mt-5 grid gap-4 md:grid-cols-[190px_1fr]">
-          <div className="flex flex-col gap-2"><ZoomableQr value={`RL-CELL:${snapshot?.warehouse?.code || "paint"}:${activeCell.code}`} label={activeCell.code} description={activeStocks.map((stock) => productById.get(stock.productId)?.name || "Изделие").slice(0, 2).join(", ")} size={125} className="w-full"/></div>
+          <div className="flex flex-col gap-2"><button type="button" onClick={(e) => { e.stopPropagation(); setQrExpanded(true); }} className="flex w-full flex-col items-center rounded-2xl border bg-white p-3 hover:border-blue-500 hover:shadow-md"><QRCodeSVG value={`RL-CELL:${snapshot?.warehouse?.code || "semi"}:${activeCell.code}`} size={125}/><b className="mt-2 font-mono">{activeCell.code}</b><span className="mt-1 text-center text-xs font-semibold">{activeStocks.map((stock) => productById.get(stock.productId)?.name || "Изделие").join(", ")}</span><span className="mt-2 text-xs text-blue-600">Увеличить и печатать</span></button></div>
           <div className="flex flex-wrap content-start gap-2">{modeButton("contents", "Содержимое", <PackagePlus size={15}/>)}{modeButton("add", "Добавить", <PackagePlus size={15}/>)}{modeButton("move", "Переместить", <ArrowRightLeft size={15}/>)}{modeButton("adjust", "Корректировать", <SlidersHorizontal size={15}/>)}{modeButton("history", "История", <History size={15}/>)}</div>
         </div>
 
@@ -321,6 +323,23 @@ export function DepartmentRoomThreeView({
 
         {mode === "history" && <div className="mt-5 space-y-2">{cellHistory.map((m) => <div key={m.id} className="rounded-xl border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><b>{m.type} · {m.productName}</b><span className="text-xs text-slate-400">{new Date(m.createdAt).toLocaleString("ru-RU")}</span></div><div className="mt-1 text-sm text-slate-600">{Number(m.quantity).toLocaleString("ru-RU")} · {m.fromCellCode || "—"} → {m.toCellCode || "—"}</div>{m.comment && <div className="mt-1 text-xs text-slate-400">{m.comment}</div>}</div>)}{!cellHistory.length && <div className="rounded-2xl border border-dashed p-8 text-center text-slate-400">Движений по ячейке пока нет</div>}</div>}
       </div>
+      {qrExpanded && <div className="fixed inset-0 flex items-center justify-center bg-slate-950/75 p-4" style={{ zIndex: 2147483640 }} onMouseDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setQrExpanded(false); }} onClick={(e) => e.stopPropagation()}>
+        <div className="relative w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
+          <button type="button" className="absolute right-4 top-4 rounded-xl bg-slate-100 p-2" onClick={() => setQrExpanded(false)} aria-label="Закрыть"><X/></button>
+          <h3 className="pr-12 text-xl font-black">QR-код ячейки {activeCell.code}</h3>
+          <p className="mt-2 text-sm font-semibold text-slate-600">{activeStocks.map((stock) => productById.get(stock.productId)?.name || "Изделие").join(", ")}</p>
+          <div ref={qrPrintRef} className="mt-5 flex flex-col items-center gap-3 rounded-2xl border p-6"><QRCodeSVG value={`RL-CELL:${snapshot?.warehouse?.code || "semi"}:${activeCell.code}`} size={240}/><b className="font-mono text-2xl">{activeCell.code}</b></div>
+          <button type="button" className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-5 py-3 font-bold text-white" onClick={() => {
+            const svg = qrPrintRef.current?.querySelector("svg")?.outerHTML;
+            if (!svg) return;
+            const popup = window.open("", "_blank", "width=900,height=700");
+            if (!popup) { toast.error("Разрешите всплывающие окна для печати"); return; }
+            const safeCode = activeCell.code.replace(/[&<>"']/g, "");
+            popup.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>QR ${safeCode}</title><style>@page{size:125mm 50mm;margin:3mm}body{font-family:Arial,sans-serif;margin:0}.label{width:119mm;height:44mm;display:flex;align-items:center;justify-content:center;gap:8mm}.label svg{width:39mm;height:39mm}.code{font-size:20pt;font-weight:800}@media print{button{display:none}}</style></head><body><button onclick="window.print()">Распечатать</button><div class="label">${svg}<div><div class="code">${safeCode}</div><p>РУССКИЙ ЛЕС · СКЛАД</p></div></div></body></html>`);
+            popup.document.close(); popup.focus();
+          }}><Printer size={18}/> Предпросмотр и печать · 125 × 50 мм</button>
+        </div>
+      </div>}
     </div>, document.body)}
   </>;
 }
