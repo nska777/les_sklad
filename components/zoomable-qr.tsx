@@ -60,7 +60,7 @@ export function ZoomableQr({ value, label, description = "", size = 116, classNa
       <span className="mt-1 text-[10px] font-semibold text-sky-600 opacity-0 transition group-hover:opacity-100">Нажмите для печати</span>
     </button>
 
-    {mounted && open && createPortal(<div className="fixed inset-0 z-[90000] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onPointerDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setOpen(false); }} onClick={(e) => e.stopPropagation()}>
+    {mounted && open && createPortal(<div className="fixed inset-0 z-[2147483600] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onPointerDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setOpen(false); }} onClick={(e) => e.stopPropagation()}>
       <div className="relative w-full max-w-3xl rounded-[28px] bg-white p-6 shadow-2xl sm:p-8" onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
         <button type="button" onClick={() => setOpen(false)} className="absolute right-3 top-3 z-[90010] flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200" aria-label="Закрыть"><X size={22}/></button>
         <div className="mb-5 pr-14"><div className="text-xs font-black uppercase tracking-[.16em] text-slate-400">QR-код ячейки</div><div className="mt-1 font-mono text-2xl font-black text-slate-900">{shownLabel}</div>{description && <div className="mt-1 text-sm font-semibold text-slate-700">{description}</div>}<div className="mt-1 text-sm text-slate-500">Горизонтальная складская этикетка</div></div>
