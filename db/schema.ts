@@ -49,6 +49,14 @@ export const departmentProducts = pgTable("department_products", {
 export const departmentStocks = pgTable("department_stocks", {
   warehouseCode: text("warehouse_code").notNull(), productId: text("product_id").notNull().references(() => departmentProducts.id, { onDelete: "cascade" }), cellId: text("cell_id").notNull().references(() => departmentCells.id, { onDelete: "cascade" }), quantity: doublePrecision("quantity").notNull().default(0), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [primaryKey({ columns: [table.warehouseCode, table.productId, table.cellId] }), index("idx_department_stocks_warehouse").on(table.warehouseCode)]);
+// Quantity received centrally but not yet assigned to a physical cell.
+export const departmentUnplacedStocks = pgTable("department_unplaced_stocks", {
+  warehouseCode: text("warehouse_code").notNull(),
+  productId: text("product_id").notNull().references(() => departmentProducts.id, { onDelete: "cascade" }),
+  quantity: doublePrecision("quantity").notNull().default(0),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [primaryKey({ columns: [table.warehouseCode, table.productId] })]);
+
 export const departmentMovements = pgTable("department_movements", {
   id: text("id").primaryKey(), warehouseCode: text("warehouse_code").notNull(), type: text("type").notNull(), productId: text("product_id").notNull().references(() => departmentProducts.id), fromCellId: text("from_cell_id").references(() => departmentCells.id), toCellId: text("to_cell_id").references(() => departmentCells.id), quantity: doublePrecision("quantity").notNull(), recipient: text("recipient").notNull().default(""), comment: text("comment").notNull().default(""), operator: text("operator").notNull().default("Кладовщик"),
   documentNumber: text("document_number").notNull().default(""), sourceName: text("source_name").notNull().default(""), sourceLocation: text("source_location").notNull().default(""), batchId: text("batch_id").notNull().default(""),

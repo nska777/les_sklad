@@ -79,13 +79,13 @@ export async function proxy(request: NextRequest) {
   headers.set("x-warehouse-access", session.warehouses.join(","));
 
   if (pathname === "/api/department-warehouse") {
-    const url = new URL("http://127.0.0.1:3000/api/department-warehouse-resilient");
+    const url = new URL("/api/department-warehouse-resilient", request.url);
     url.search = request.nextUrl.search;
     return NextResponse.rewrite(url, { request: { headers } });
   }
 
   if (pathname === "/api/warehouse") {
-    const url = new URL("http://127.0.0.1:3000/api/warehouse-resilient");
+    const url = new URL("/api/warehouse-resilient", request.url);
     url.search = request.nextUrl.search;
     return NextResponse.rewrite(url, { request: { headers } });
   }
