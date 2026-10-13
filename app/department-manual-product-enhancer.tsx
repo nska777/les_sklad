@@ -62,12 +62,79 @@ function addActualQuantityField(form: HTMLFormElement) {
   unitWrap.insertAdjacentElement("afterend", wrap);
 }
 
+
+function enhanceSemiProduct(form: HTMLFormElement) {
+  const grid = form.querySelector<HTMLElement>(".grid");
+  if (grid) {
+    grid.className = "mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3";
+    grid.querySelectorAll<HTMLElement>(":scope > div").forEach((item) => {
+      item.classList.add("min-w-0");
+    });
+  }
+  const heading = form.querySelector("h3");
+  if (heading) heading.textContent = "Новое изделие / полуфабрикат";
+  for (const field of ["ral", "packType"]) {
+    const element = form.elements.namedItem(field);
+    if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) fieldWrap(element)?.remove();
+  }
+  const selects: Record<string, string[]> = {
+    category: ["Полуфабрикаты", "Материалы", "Готовые изделия"],
+    brand: ["Amber", "Scandy", "Boungiorno", "Elizabeth", "Pitti", "Salvador", "Grace", "Диваны", "Кухни", "Другие коллекции"],
+  };
+  for (const [field, options] of Object.entries(selects)) {
+    const old = form.elements.namedItem(field);
+    if (!(old instanceof HTMLInputElement)) continue;
+    const select = document.createElement("select");
+    select.name = field;
+    select.required = true;
+    select.className = "mt-1.5 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-emerald-600";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = field === "category" ? "Выберите категорию" : "Выберите коллекцию";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    select.appendChild(placeholder);
+    for (const option of options) {
+      const item = document.createElement("option");
+      item.value = option;
+      item.textContent = option;
+      select.appendChild(item);
+    }
+    old.replaceWith(select);
+    relabel(form, field, field === "category" ? "Категория *" : "Бренд / коллекция *");
+  }
+  for (const field of ["name", "color"]) {
+    const input = form.elements.namedItem(field);
+    if (input instanceof HTMLInputElement) {
+      input.required = true;
+      relabel(form, field, field === "name" ? "Наименование *" : "Цвет *");
+    }
+  }
+  const sku = form.elements.namedItem("sku");
+  if (sku instanceof HTMLInputElement) {
+    sku.value = "SF-" + crypto.randomUUID().replace(/-/g, "").slice(0, 7).toUpperCase();
+    sku.maxLength = 20;
+    sku.placeholder = "SF-XXXXXXX";
+    relabel(form, "sku", "Артикул *");
+  }
+  const comment = form.elements.namedItem("comment");
+  if (comment instanceof HTMLInputElement) {
+    comment.required = false;
+    comment.removeAttribute("aria-required");
+    relabel(form, "comment", "Комментарий (необязательно)");
+    comment.placeholder = "При необходимости добавьте примечание";
+    fieldWrap(comment)?.classList.add("sm:col-span-2", "lg:col-span-3");
+  }
+  form.classList.add("rounded-2xl", "border", "border-slate-200", "bg-white", "shadow-sm");
+}
+
 function enhance(form: HTMLFormElement) {
   if (form.dataset.manualProductEnhanced === "1") return;
   const title = form.querySelector("h3")?.textContent?.trim();
   if (title !== "Добавить материал вручную") return;
 
   form.dataset.manualProductEnhanced = "1";
+  const isSemi = window.location.pathname.startsWith("/department/semi");
 
   addActualQuantityField(form);
 
@@ -103,8 +170,8 @@ function enhance(form: HTMLFormElement) {
 
   const comment = form.elements.namedItem("comment");
   if (comment instanceof HTMLInputElement) {
-    comment.required = true;
-    comment.setAttribute("aria-required", "true");
+    comment.required = !isSemi;
+    if (!isSemi) comment.setAttribute("aria-required", "true");
     const label = fieldWrap(comment)?.querySelector("label");
     if (label) label.textContent = "Комментарий *";
   }
@@ -133,6 +200,8 @@ function enhance(form: HTMLFormElement) {
     }
   }
 
+  if (isSemi) enhanceSemiProduct(form);
+
   form.addEventListener("submit", (event) => {
     const name = form.elements.namedItem("name");
     const skuInput = form.elements.namedItem("sku");
@@ -154,7 +223,7 @@ function enhance(form: HTMLFormElement) {
       quantityInput instanceof HTMLInputElement && quantityInput.focus();
       return;
     }
-    if (!(commentInput instanceof HTMLInputElement) || !commentInput.value.trim()) {
+    if (!isSemi && (!(commentInput instanceof HTMLInputElement) || !commentInput.value.trim())) {
       event.preventDefault();
       event.stopImmediatePropagation();
       toast.error("Комментарий обязателен", { description: "Коротко укажите основание добавления материала." });
