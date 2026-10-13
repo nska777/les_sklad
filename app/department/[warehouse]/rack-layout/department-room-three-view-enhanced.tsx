@@ -323,7 +323,10 @@ export function DepartmentRoomThreeView({
 
         {mode === "history" && <div className="mt-5 space-y-2">{cellHistory.map((m) => <div key={m.id} className="rounded-xl border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><b>{m.type} · {m.productName}</b><span className="text-xs text-slate-400">{new Date(m.createdAt).toLocaleString("ru-RU")}</span></div><div className="mt-1 text-sm text-slate-600">{Number(m.quantity).toLocaleString("ru-RU")} · {m.fromCellCode || "—"} → {m.toCellCode || "—"}</div>{m.comment && <div className="mt-1 text-xs text-slate-400">{m.comment}</div>}</div>)}{!cellHistory.length && <div className="rounded-2xl border border-dashed p-8 text-center text-slate-400">Движений по ячейке пока нет</div>}</div>}
       </div>
-      {qrExpanded && <div className="fixed inset-0 flex items-center justify-center bg-slate-950/75 p-4" style={{ zIndex: 2147483640 }} onMouseDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setQrExpanded(false); }} onClick={(e) => e.stopPropagation()}>
+
+    </div>, document.body)}
+    {activeCell && qrExpanded && typeof document !== "undefined" && createPortal(
+      {qrExpanded && <div className="fixed inset-0 flex items-center justify-center bg-slate-950/75 p-4" style={{ zIndex: 2147483647, isolation: "isolate" }} onMouseDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) setQrExpanded(false); }} onClick={(e) => e.stopPropagation()}>
         <div className="relative w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl" onMouseDown={(e) => e.stopPropagation()}>
           <button type="button" className="absolute right-4 top-4 rounded-xl bg-slate-100 p-2" onClick={() => setQrExpanded(false)} aria-label="Закрыть"><X/></button>
           <h3 className="pr-12 text-xl font-black">QR-код ячейки {activeCell.code}</h3>
@@ -340,6 +343,6 @@ export function DepartmentRoomThreeView({
           }}><Printer size={18}/> Предпросмотр и печать · 125 × 50 мм</button>
         </div>
       </div>}
-    </div>, document.body)}
+    , document.body)}
   </>;
 }
