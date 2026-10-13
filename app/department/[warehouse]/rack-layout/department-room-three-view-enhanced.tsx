@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { createPortal } from "react-dom";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { QRCodeSVG } from "qrcode.react";
 import { ArrowRightLeft, History, PackagePlus, SlidersHorizontal, X } from "lucide-react";
@@ -47,7 +48,7 @@ function labelSprite(text: string, accent = false, scale = 1) {
   ctx.fillStyle = accent ? "rgba(255,247,237,.97)" : "rgba(255,255,255,.96)";
   ctx.strokeStyle = accent ? "#f97316" : "#cbd5e1";
   ctx.lineWidth = 4; ctx.roundRect(8, 8, 624, 164, 26); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = "#0f172a"; ctx.font = "700 28px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#0f172a"; ctx.font = "800 36px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   text.split("\n").slice(0, 3).forEach((line, i) => ctx.fillText(line, 320, 48 + i * 46, 580));
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
@@ -179,10 +180,10 @@ export function DepartmentRoomThreeView({
     const centerX = placements.length ? placements.reduce((s, p) => s + p.x, 0) / placements.length : 0;
     const centerZ = placements.length ? placements.reduce((s, p) => s + p.z, 0) / placements.length : 0;
     const center = new THREE.Vector3(centerX, 2.2, centerZ);
-    const camera = new THREE.PerspectiveCamera(46, 1, .1, 140);
+    const camera = new THREE.PerspectiveCamera(36, 1, .1, 140);
     const savedCamera = cameraStateRef.current;
     if (savedCamera) camera.position.fromArray(savedCamera.position);
-    else camera.position.set(center.x, center.y + 2.8, center.z + 18);
+    else camera.position.set(center.x, center.y + 1.8, center.z + (rackOnly.length === 1 && floorsOnly.length === 0 ? 11 : 18));
     camera.lookAt(savedCamera ? new THREE.Vector3(...savedCamera.target) : center);
     const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.shadowMap.enabled = true; renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.style.width = "100%"; renderer.domElement.style.height = "100%"; renderer.domElement.style.cursor = "pointer"; host.appendChild(renderer.domElement);
@@ -246,7 +247,7 @@ export function DepartmentRoomThreeView({
           });
           const total = ss.reduce((sum, s) => sum + Number(s.quantity), 0), first = ss[0];
           const label = labelSprite(occupied ? `${cell.code}\n${first.productName}${ss.length > 1 ? ` +${ss.length - 1}` : ""}\n${total.toLocaleString("ru-RU")} ${first.unit}` : `${cell.code}\n${cw.toFixed(2)}×${ch.toFixed(2)}×${cd.toFixed(2)} м`, selected || occupied, .72);
-          label.position.set(x, y + .15, z + .34); label.scale.x = Math.min(2.7, Math.max(1.05, cw * .85)); group.add(label);
+          label.position.set(x, y + .15, z + .34); label.scale.x = Math.min(2.7, Math.max(1.25, cw * 1.15)); group.add(label);
         });
         if (row.length) addBox(group, .05, rowH, rackDepth, totalW / 2, yCursor + rowH / 2, 0, shelf);
         yCursor += rowH; addBox(group, rackWidth + .15, shelfT, rackDepth, 0, yCursor + shelfT / 2, 0, shelf); yCursor += shelfT;
@@ -300,11 +301,11 @@ export function DepartmentRoomThreeView({
   return <>
     <div className="relative overflow-hidden rounded-3xl border bg-slate-100 shadow-inner"><div ref={hostRef} className="h-[76vh] min-h-[680px] w-full"/><div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border bg-white/90 px-4 py-2 text-xs font-medium text-slate-600 shadow">Стеллаж — выбрать · ячейка — открыть карточку · пустое место — снять выделение</div></div>
 
-    {activeCell && <div className="fixed inset-0 z-[30000] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) setActiveCell(null); }}>
+    {activeCell && typeof document !== "undefined" && createPortal(<div className="fixed inset-0 z-[2147483000] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) setActiveCell(null); }}>
       <div className="max-h-[92vh] w-full max-w-[980px] overflow-auto rounded-[28px] border bg-white p-5 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-4"><div><div className="text-xs font-black uppercase tracking-[.14em] text-blue-600">Ячейка / место хранения</div><h2 className="mt-1 text-2xl font-black">{activeCell.code}</h2><p className="mt-1 text-sm text-slate-500">{activeStocks.length} позиций · {activeStocks.length ? "Занята" : "Свободна"}</p></div><button type="button" onClick={() => setActiveCell(null)} className="rounded-xl p-2 hover:bg-slate-100"><X/></button></div>
         <div className="mt-5 grid gap-4 md:grid-cols-[170px_1fr]">
-          <div className="flex h-[170px] items-center justify-center rounded-2xl border bg-white"><QRCodeSVG value={`RL-CELL:${snapshot?.warehouse?.code || "paint"}:${activeCell.code}`} size={140}/></div>
+          <div className="flex min-h-[190px] flex-col items-center justify-center gap-2 rounded-2xl border bg-white p-3"><QRCodeSVG value={`RL-CELL:${snapshot?.warehouse?.code || "paint"}:${activeCell.code}`} size={125}/><b className="text-center font-mono text-base text-slate-900">{activeCell.code}</b><span className="max-w-[160px] text-center text-xs font-semibold leading-4 text-slate-600">{activeStocks.length ? activeStocks.map((stock) => productById.get(stock.productId)?.name || "Изделие").slice(0, 2).join(", ") : "Свободная ячейка"}</span></div>
           <div className="flex flex-wrap content-start gap-2">{modeButton("contents", "Содержимое", <PackagePlus size={15}/>)}{modeButton("add", "Добавить", <PackagePlus size={15}/>)}{modeButton("move", "Переместить", <ArrowRightLeft size={15}/>)}{modeButton("adjust", "Корректировать", <SlidersHorizontal size={15}/>)}{modeButton("history", "История", <History size={15}/>)}</div>
         </div>
 
@@ -318,6 +319,6 @@ export function DepartmentRoomThreeView({
 
         {mode === "history" && <div className="mt-5 space-y-2">{cellHistory.map((m) => <div key={m.id} className="rounded-xl border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><b>{m.type} · {m.productName}</b><span className="text-xs text-slate-400">{new Date(m.createdAt).toLocaleString("ru-RU")}</span></div><div className="mt-1 text-sm text-slate-600">{Number(m.quantity).toLocaleString("ru-RU")} · {m.fromCellCode || "—"} → {m.toCellCode || "—"}</div>{m.comment && <div className="mt-1 text-xs text-slate-400">{m.comment}</div>}</div>)}{!cellHistory.length && <div className="rounded-2xl border border-dashed p-8 text-center text-slate-400">Движений по ячейке пока нет</div>}</div>}
       </div>
-    </div>}
+    </div>, document.body)}
   </>;
 }
