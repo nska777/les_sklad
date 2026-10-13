@@ -21,7 +21,7 @@ const names: Record<string, string> = {
 
 export function ResilienceIndicator() {
   const [status, setStatus] = useState<Status | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
     let active = true;
