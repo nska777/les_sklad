@@ -2,7 +2,7 @@ const DEFAULT_PASSWORD = "RL-7K4M-926P";
 const DEFAULT_SECRET = "russian-forest-warehouse-v05-2026";
 
 export type WarehouseRole = "admin" | "manager" | "storekeeper" | "viewer";
-export type WarehouseCode = "hardware" | "paint" | "ldsp";
+export type WarehouseCode = "hardware" | "paint" | "ldsp" | "semi";
 export type WarehouseUser = { username: string; name: string; password: string; role: WarehouseRole; warehouse?: WarehouseCode; warehouses?: WarehouseCode[] };
 export type WarehouseSession = { username: string; name: string; role: WarehouseRole; warehouse: WarehouseCode; warehouses: WarehouseCode[] };
 
@@ -10,12 +10,13 @@ export const warehouseDivisions: Array<{ code: WarehouseCode; name: string; shor
   { code: "hardware", name: "Склад фурнитуры", short: "Фурнитура" },
   { code: "paint", name: "Склад краски", short: "Краска" },
   { code: "ldsp", name: "Склад ЛДСП", short: "ЛДСП" },
+  { code: "semi", name: "Склад полуфабрикатов", short: "Полуфабрикаты" },
 ];
 
 export const allWarehouseCodes = warehouseDivisions.map((item) => item.code) as WarehouseCode[];
 
 export function isWarehouseCode(value: unknown): value is WarehouseCode {
-  return value === "hardware" || value === "paint" || value === "ldsp";
+  return value === "hardware" || value === "paint" || value === "ldsp" || value === "semi";
 }
 
 export function normalizeWarehouses(values: unknown, fallback: WarehouseCode = "hardware") {
