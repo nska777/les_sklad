@@ -193,6 +193,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    if (action === "placeUnplaced") {
+      const productId = clean(body.productId);
+      const cellId = clean(body.cellId);
+      const quantity = amount(body.quantity);
+      if (!productId || !cellId || quantity <= 0) return NextResponse.json({ error: "Выберите материал, ячейку и количество" }, { status: 400 });
+      const [product, cell] = await Promise.all([ownedProduct(db, ctx.warehouseCode, productId), ownedCell(db, ctx.warehouseCode, cellId)]);
+      if (!product || !cell || cell.blocked) return NextResponse.json({ error: "Материал или ячейка недоступны" }, { status: 400 });
+      const moved = await db.execute(sql`
+        WITH deducted AS (
+          UPDATE department_unplaced_stocks SET quantity = quantity - ${quantity}, updated_at = CURRENT_TIMESTAMP
+          WHERE warehouse_code = ${ctx.warehouseCode} AND product_id = ${productId} AND quantity >= ${quantity}
+          RETURNING warehouse_code, product_id
+        ), placed AS (
+          INSERT INTO department_stocks (warehouse_code, product_id, cell_id, quantity)
+          SELECT warehouse_code, product_id, ${cellId}, ${quantity} FROM deducted
+          ON CONFLICT (warehouse_code, product_id, cell_id)
+          DO UPDATE SET quantity = department_stocks.quantity + EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP
+          RETURNING product_id
+        )
+        INSERT INTO department_movements (id, warehouse_code, type, product_id, from_cell_id, to_cell_id, quantity, operator, document_number, source_name)
+        SELECT ${crypto.randomUUID()}, ${ctx.warehouseCode}, 'Размещение', product_id, NULL, ${cellId}, ${quantity}, ${ctx.operator}, 'РАЗМЕЩЕНИЕ', 'Ожидает размещения'
+        FROM placed RETURNING id
+      `);
+      if (!moved.rows.length) return NextResponse.json({ error: "Недостаточно неразмещённого остатка" }, { status: 409 });
+      return NextResponse.json({ ok: true });
+    }
+
     if (action === "transfer") {
       const productId = clean(body.productId), fromCellId = clean(body.fromCellId), toCellId = clean(body.toCellId), quantity = amount(body.quantity);
       if (!productId || !fromCellId || !toCellId || fromCellId === toCellId || quantity <= 0) return NextResponse.json({ error: "Проверьте товар, ячейки и количество" }, { status: 400 });
