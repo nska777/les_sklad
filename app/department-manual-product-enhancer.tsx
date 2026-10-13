@@ -5,7 +5,8 @@ import { toast } from "sonner";
 
 const GENERATED_PREFIX = "PAINT";
 
-function generatedSku() {
+function generatedSku(isSemi = false) {
+  if (isSemi) return `PF-${crypto.randomUUID().replace(/-/g, "").slice(0, 5).toUpperCase()}`;
   const now = new Date();
   const date = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
   const tail = Math.random().toString(36).slice(2, 6).toUpperCase();
@@ -112,9 +113,9 @@ function enhanceSemiProduct(form: HTMLFormElement) {
   }
   const sku = form.elements.namedItem("sku");
   if (sku instanceof HTMLInputElement) {
-    sku.value = "SF-" + crypto.randomUUID().replace(/-/g, "").slice(0, 7).toUpperCase();
-    sku.maxLength = 20;
-    sku.placeholder = "SF-XXXXXXX";
+    sku.value = generatedSku(true);
+    sku.maxLength = 8;
+    sku.placeholder = "PF-XXXXX";
     relabel(form, "sku", "Артикул *");
   }
   const comment = form.elements.namedItem("comment");
@@ -181,6 +182,7 @@ function enhance(form: HTMLFormElement) {
     sku.required = true;
     sku.setAttribute("aria-required", "true");
     sku.style.paddingRight = "3rem";
+    if (isSemi) { sku.maxLength = 8; sku.value = generatedSku(true); }
 
     const wrap = fieldWrap(sku);
     if (wrap) {
@@ -192,7 +194,7 @@ function enhance(form: HTMLFormElement) {
       button.setAttribute("aria-label", "Сгенерировать артикул");
       button.textContent = "↻";
       button.addEventListener("click", () => {
-        sku.value = generatedSku();
+        sku.value = generatedSku(isSemi);
         sku.dispatchEvent(new Event("input", { bubbles: true }));
         sku.focus();
       });
