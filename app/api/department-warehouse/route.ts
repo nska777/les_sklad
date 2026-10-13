@@ -171,11 +171,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "receive") {
+      const operationId = clean(body._operationId);
+      if (operationId) {
+        const existing = await db.select({ id: departmentMovements.id }).from(departmentMovements)
+          .where(and(eq(departmentMovements.id, operationId), eq(departmentMovements.warehouseCode, ctx.warehouseCode))).limit(1);
+        if (existing.length) return NextResponse.json({ ok: true, alreadyApplied: true });
+      }
       const productId = clean(body.productId), cellId = clean(body.cellId), quantity = amount(body.quantity);
       const [product, cell] = await Promise.all([ownedProduct(db, ctx.warehouseCode, productId), ownedCell(db, ctx.warehouseCode, cellId)]);
       if (!product || !cell || quantity <= 0) return NextResponse.json({ error: "Проверьте материал, место хранения и количество" }, { status: 400 });
       await setStock(db, ctx.warehouseCode, productId, cellId, await getStock(db, ctx.warehouseCode, productId, cellId) + quantity);
-      await db.insert(departmentMovements).values({ id: crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: "Приход", productId, fromCellId: null, toCellId: cellId, quantity, recipient: "", comment: clean(body.comment), operator: ctx.operator, documentNumber: clean(body.documentNumber), sourceName: clean(body.sourceName), sourceLocation: clean(body.sourceLocation), batchId: "" });
+      await db.insert(departmentMovements).values({ id: operationId || crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: "Приход", productId, fromCellId: null, toCellId: cellId, quantity, recipient: "", comment: clean(body.comment), operator: ctx.operator, documentNumber: clean(body.documentNumber), sourceName: clean(body.sourceName), sourceLocation: clean(body.sourceLocation), batchId: "" });
       return NextResponse.json({ ok: true });
     }
 
