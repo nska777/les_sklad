@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Boxes, Layers3, Loader2, PaintBucket, TreePine } from "lucide-react";
+import { ArrowRight, Boxes, Layers3, Loader2, PaintBucket, Factory, TreePine } from "lucide-react";
 
-type WarehouseCode = "hardware" | "paint" | "ldsp";
+type WarehouseCode = "hardware" | "paint" | "ldsp" | "semi";
 type Me = { name: string; role: string; warehouse: WarehouseCode; warehouses: WarehouseCode[] };
 
 const departments: Array<{ code: WarehouseCode; name: string; description: string; icon: typeof Boxes; accent: string; badge: string }> = [
   { code: "hardware", name: "Склад фурнитуры", description: "Фурнитура и комплектующие", icon: Boxes, accent: "from-slate-900 to-slate-700", badge: "Работает" },
   { code: "paint", name: "Склад краски", description: "Краски, эмали, лаки и расходные материалы", icon: PaintBucket, accent: "from-orange-500 to-amber-400", badge: "Работает" },
   { code: "ldsp", name: "Склад ЛДСП", description: "Листы, декоры и плитные материалы", icon: Layers3, accent: "from-zinc-700 to-stone-500", badge: "Подготовлен" },
+  { code: "semi", name: "Склад полуфабрикатов", description: "Изделия производства, адресное хранение и выдача в сборку", icon: Factory, accent: "from-emerald-700 to-teal-500", badge: "Работает" },
 ];
 
 export default function DepartmentsPage() {
@@ -58,7 +59,7 @@ export default function DepartmentsPage() {
         <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-5xl">Выберите склад</h1>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {available.map((department) => {
           const Icon = department.icon;
           return <button key={department.code} type="button" onClick={() => void openWarehouse(department.code)} disabled={switching !== null} className="group relative overflow-hidden rounded-[28px] border border-white/80 bg-white/85 p-5 text-left shadow-[0_20px_70px_rgba(32,45,32,.10)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:shadow-[0_26px_80px_rgba(32,45,32,.16)] disabled:opacity-60 sm:p-6">
