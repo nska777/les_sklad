@@ -181,7 +181,13 @@ export async function POST(request: NextRequest) {
       }
       const productId = clean(body.productId), cellId = clean(body.cellId), quantity = amount(body.quantity);
       const [product, cell] = await Promise.all([ownedProduct(db, ctx.warehouseCode, productId), ownedCell(db, ctx.warehouseCode, cellId)]);
-      if (!product || !cell || quantity <= 0) return NextResponse.json({ error: "Проверьте материал, место хранения и количество" }, { status: 400 });
+      if (!product || quantity <= 0 || (cellId && !cell)) return NextResponse.json({ error: "Проверьте материал, место хранения и количество" }, { status: 400 });
+      if (!cellId) {
+        await db.insert(departmentUnplacedStocks).values({ warehouseCode: ctx.warehouseCode, productId, quantity, updatedAt: new Date().toISOString() })
+          .onConflictDoUpdate({ target: [departmentUnplacedStocks.warehouseCode, departmentUnplacedStocks.productId], set: { quantity: sql`${departmentUnplacedStocks.quantity} + ${quantity}`, updatedAt: new Date().toISOString() } });
+        await db.insert(departmentMovements).values({ id: operationId || crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: "Приход", productId, fromCellId: null, toCellId: null, quantity, recipient: "", comment: clean(body.comment), operator: ctx.operator, documentNumber: clean(body.documentNumber), sourceName: clean(body.sourceName), sourceLocation: clean(body.sourceLocation), batchId: "" });
+        return NextResponse.json({ ok: true, unplaced: true });
+      }
       await setStock(db, ctx.warehouseCode, productId, cellId, await getStock(db, ctx.warehouseCode, productId, cellId) + quantity);
       await db.insert(departmentMovements).values({ id: operationId || crypto.randomUUID(), warehouseCode: ctx.warehouseCode, type: "Приход", productId, fromCellId: null, toCellId: cellId, quantity, recipient: "", comment: clean(body.comment), operator: ctx.operator, documentNumber: clean(body.documentNumber), sourceName: clean(body.sourceName), sourceLocation: clean(body.sourceLocation), batchId: "" });
       return NextResponse.json({ ok: true });
