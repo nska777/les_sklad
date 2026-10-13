@@ -10,6 +10,7 @@ import {
   departmentProducts,
   departmentRacks,
   departmentStocks,
+  departmentUnplacedStocks,
 } from "@/db/schema";
 import { isWarehouseCode, warehouseName } from "@/lib/warehouse-auth";
 
@@ -53,11 +54,12 @@ export async function GET(request: NextRequest) {
   if (!ctx) return NextResponse.json({ error: "Недоступное подразделение" }, { status: 403 });
   try {
     const db = await getDb();
-    const [racks, cells, products, stocks, movements, mixes, inventories] = await Promise.all([
+    const [racks, cells, products, stocks, unplacedStocks, movements, mixes, inventories] = await Promise.all([
       db.select().from(departmentRacks).where(and(eq(departmentRacks.warehouseCode, ctx.warehouseCode), eq(departmentRacks.archived, false))).orderBy(asc(departmentRacks.code)),
       db.select().from(departmentCells).where(eq(departmentCells.warehouseCode, ctx.warehouseCode)).orderBy(asc(departmentCells.code)),
       db.select().from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.archived, false))).orderBy(asc(departmentProducts.name)),
       db.select().from(departmentStocks).where(and(eq(departmentStocks.warehouseCode, ctx.warehouseCode), sql`${departmentStocks.quantity} > 0`)),
+      db.select().from(departmentUnplacedStocks).where(and(eq(departmentUnplacedStocks.warehouseCode, ctx.warehouseCode), sql`${departmentUnplacedStocks.quantity} > 0`)),
       db.select().from(departmentMovements).where(eq(departmentMovements.warehouseCode, ctx.warehouseCode)).orderBy(desc(departmentMovements.createdAt)).limit(700),
       db.select().from(departmentMixes).where(eq(departmentMixes.warehouseCode, ctx.warehouseCode)).orderBy(desc(departmentMixes.createdAt)).limit(100),
       db.select().from(departmentInventorySnapshots).where(eq(departmentInventorySnapshots.warehouseCode, ctx.warehouseCode)).orderBy(desc(departmentInventorySnapshots.createdAt)).limit(30),
@@ -69,7 +71,7 @@ export async function GET(request: NextRequest) {
       const lines = await db.select().from(departmentMixLines).where(eq(departmentMixLines.mixId, mix.id));
       return { ...mix, lines: lines.map((line) => ({ ...line, productName: productById.get(line.productId)?.name || "Материал", cellCode: cellById.get(line.cellId)?.code || "" })) };
     }));
-    return NextResponse.json({ warehouse: { code: ctx.warehouseCode, name: warehouseName(ctx.warehouseCode) }, racks, cells, products, stocks, movements: movementRows, mixes: mixRows, inventories });
+    return NextResponse.json({ warehouse: { code: ctx.warehouseCode, name: warehouseName(ctx.warehouseCode) }, racks, cells, products, stocks, unplacedStocks, movements: movementRows, mixes: mixRows, inventories });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Не удалось загрузить склад" }, { status: 500 });
   }
