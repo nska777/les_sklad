@@ -6,6 +6,8 @@ import { ChevronDown, ChevronRight, Download, Search } from "lucide-react";
 
 type IssuedRow = {
   id: string;
+  documentId: string | null;
+  documentStatus: string | null;
   createdAt: string;
   documentNumber: string;
   oneCId: string;
@@ -20,10 +22,12 @@ type IssuedRow = {
   cellCode: string;
 };
 
-type ResponseBody = { rows?: IssuedRow[] };
+type ResponseBody = { rows?: IssuedRow[]; canCancel?: boolean };
 
 type IssuedDocument = {
   key: string;
+  documentId: string | null;
+  documentStatus: string | null;
   documentNumber: string;
   oneCId: string;
   recipient: string;
@@ -41,7 +45,7 @@ function replaceJournalLabel() {
   for (const node of Array.from(tab.childNodes)) {
     if (node.nodeType === Node.TEXT_NODE && node.textContent?.includes("Журнал")) node.textContent = node.textContent.replace("Журнал", "Выданные");
   }
-  tab.setAttribute("aria-label", "Выданные материалы");
+  tab.setAttribute("aria-label", "Выданная фурнитура");
   return tab;
 }
 
@@ -78,6 +82,9 @@ function formatWarehouseTime(value: string) {
 export function HardwareIssuedMaterials() {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [rows, setRows] = useState<IssuedRow[]>([]);
+  const [canCancel, setCanCancel] = useState(false);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState("");
   const [query, setQuery] = useState("");
   const [openedDocument, setOpenedDocument] = useState<string | null>(null);
 
@@ -90,7 +97,7 @@ export function HardwareIssuedMaterials() {
         const response = await fetch("/api/warehouse/issued", { cache: "no-store" });
         if (!response.ok) return;
         const body = await response.json() as ResponseBody;
-        if (!stopped) setRows(Array.isArray(body.rows) ? body.rows : []);
+        if (!stopped) { setRows(Array.isArray(body.rows) ? body.rows : []); setCanCancel(body.canCancel === true); }
       } catch {
         // Фоновое обновление журнала выдач не блокирует склад.
       }
@@ -134,7 +141,7 @@ export function HardwareIssuedMaterials() {
     const grouped = new Map<string, IssuedDocument>();
 
     for (const row of rows) {
-      const key = row.documentNumber || "Без документа";
+      const key = row.documentId || `orphan:${row.id}`;
       const current = grouped.get(key);
       if (current) {
         current.rows.push(row);
@@ -147,7 +154,9 @@ export function HardwareIssuedMaterials() {
       } else {
         grouped.set(key, {
           key,
-          documentNumber: key,
+          documentId: row.documentId,
+          documentStatus: row.documentStatus,
+          documentNumber: row.documentNumber || "Без документа",
           oneCId: row.oneCId || "",
           recipient: row.recipient || "",
           operator: row.operator || "",
@@ -180,9 +189,27 @@ export function HardwareIssuedMaterials() {
   const filteredRows = useMemo(() => filteredDocuments.flatMap((document) => document.rows), [filteredDocuments]);
   const totalQuantity = filteredRows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
 
+  const cancelIssue = async (document: IssuedDocument) => {
+    if (!canCancel || !document.documentId || cancelling) return;
+    const warning = `Отменить выдачу №${document.documentNumber}? Все ${document.rows.length} движения будут возвращены в исходные ячейки. Действие необратимо.${document.oneCId ? "\\nДокумент 1С отменять отдельно." : ""}`;
+    if (!window.confirm(warning)) return;
+    setCancelling(document.documentId);
+    setCancelError("");
+    try {
+      const response = await fetch("/api/warehouse/issues/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ documentId: document.documentId }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Отмена не выполнена");
+      window.dispatchEvent(new Event("hardware:refresh-now"));
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "Ошибка отмены");
+    } finally {
+      setCancelling(null);
+    }
+  };
+
   const exportExcel = async () => {
     const XLSX = await import("xlsx");
-    const title = [["РУССКИЙ ЛЕС · ВЫДАННЫЕ МАТЕРИАЛЫ"], ["Сформировано", new Date().toLocaleString("ru-RU", { timeZone: "Asia/Tashkent" })], []];
+    const title = [["РУССКИЙ ЛЕС · ВЫДАННАЯ ФУРНИТУРА"], ["Сформировано", new Date().toLocaleString("ru-RU", { timeZone: "Asia/Tashkent" })], []];
     const headers = [["Дата", "Время", "Документ", "ID 1С", "Материал", "Артикул", "Штрихкод", "Кол-во", "Ед.", "Ячейка", "Получатель", "Кладовщик", "Комментарий"]];
     const data = filteredRows.map((row) => [
       formatWarehouseDate(row.createdAt),
@@ -207,7 +234,7 @@ export function HardwareIssuedMaterials() {
     ];
     sheet["!autofilter"] = { ref: `A4:M${Math.max(4, data.length + 4)}` };
     const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, sheet, "Выданные материалы");
+    XLSX.utils.book_append_sheet(book, sheet, "Выданная фурнитура");
     XLSX.writeFile(book, `Выданные_материалы_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
@@ -218,12 +245,13 @@ export function HardwareIssuedMaterials() {
       <div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-end">
         <div>
           <p className="eyebrow">Фактическая выдача со склада</p>
-          <h1 className="page-title">Выданные материалы</h1>
+          <h1 className="page-title">Выданная фурнитура</h1>
           <p className="page-description">Один документ — одна строка. Нажмите, чтобы посмотреть состав выдачи.</p>
         </div>
         <button type="button" onClick={() => void exportExcel()} className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"><Download size={16} /> Скачать Excel</button>
       </div>
 
+      {cancelError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{cancelError}</div>}
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5"><div className="text-[11px] font-semibold uppercase tracking-[.12em] text-slate-500">Позиций</div><div className="mt-0.5 text-xl font-extrabold text-slate-900">{filteredRows.length}</div></div>
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-2.5"><div className="text-[11px] font-semibold uppercase tracking-[.12em] text-slate-500">Документов</div><div className="mt-0.5 text-xl font-extrabold text-slate-900">{filteredDocuments.length}</div></div>
@@ -257,6 +285,7 @@ export function HardwareIssuedMaterials() {
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Документ</div>
                   <div className="font-extrabold text-slate-900">№ {document.documentNumber}</div>
+                  {document.documentStatus === "cancelled" && <span className="text-xs font-bold text-red-600">Отменено</span>}
                   {document.oneCId && <div className="text-[11px] text-slate-500">1С: {document.oneCId}</div>}
                 </div>
                 <div>
@@ -281,6 +310,7 @@ export function HardwareIssuedMaterials() {
                   <div><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Комментарий</div><div className="text-slate-700">{document.comment || "—"}</div></div>
                 </div>
 
+                {canCancel && document.documentId && document.documentStatus !== "cancelled" && <button type="button" disabled={Boolean(cancelling)} onClick={() => void cancelIssue(document)} className="mb-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 disabled:opacity-50">{cancelling === document.documentId ? "Отмена..." : "Отменить выдачу"}</button>}
                 <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
                   <table className="w-full min-w-[760px] border-collapse text-sm">
                     <thead className="bg-slate-50 text-left text-[10px] uppercase tracking-wide text-slate-500">
