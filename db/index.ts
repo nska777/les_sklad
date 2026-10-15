@@ -112,3 +112,21 @@ export async function getDb() {
   await ensureSchema((statement) => client.query(statement).then(() => undefined));
   return drizzleNeon(client, { schema });
 }
+
+/** Transactional PostgreSQL access for inventory corrections. Neon HTTP cannot safely run this operation. */
+export async function withHardwareTransaction<T>(run: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  if (!hasDirectPostgresConfig()) throw new Error("Для отмены выдачи требуется прямое подключение PostgreSQL");
+  await getDb();
+  const client = await getPgPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await run(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
