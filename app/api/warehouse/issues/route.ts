@@ -1,5 +1,5 @@
 import { and, eq, ne, sql } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, withHardwareTransaction } from "@/db";
 import { activityLogs, cells, movements, products, stocks, warehouseDocumentLines, warehouseDocuments } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -112,59 +112,42 @@ export async function POST(request: Request) {
       const lineId = clean(body.lineId);
       const cellId = clean(body.cellId);
       const quantity = num(body.quantity);
-      if (!documentId || !lineId || !cellId || quantity <= 0) {
-        return Response.json({ error: "Выберите документ, позицию, ячейку и количество" }, { status: 400 });
-      }
-
-      const [[document], [line]] = await Promise.all([
-        db.select().from(warehouseDocuments).where(eq(warehouseDocuments.id, documentId)).limit(1),
-        db.select().from(warehouseDocumentLines).where(and(eq(warehouseDocumentLines.id, lineId), eq(warehouseDocumentLines.documentId, documentId))).limit(1),
-      ]);
-      if (!document || document.type !== "issue" || !line) return Response.json({ error: "Позиция выдачи не найдена" }, { status: 404 });
-      if (document.status === "completed" || document.status === "cancelled") return Response.json({ error: "Документ уже закрыт" }, { status: 409 });
-
-      const remaining = line.plannedQuantity - line.processedQuantity;
-      if (quantity > remaining) return Response.json({ error: `По этой позиции осталось выдать ${remaining}` }, { status: 409 });
-
-      const [[cell], [stock], [product]] = await Promise.all([
-        db.select().from(cells).where(eq(cells.id, cellId)).limit(1),
-        db.select().from(stocks).where(and(eq(stocks.productId, line.productId), eq(stocks.cellId, cellId))).limit(1),
-        db.select().from(products).where(eq(products.id, line.productId)).limit(1),
-      ]);
-      if (!cell || cell.blocked) return Response.json({ error: "Ячейка недоступна" }, { status: 409 });
-      if (!stock || stock.quantity < quantity) {
-        return Response.json({ error: `В ячейке ${cell.code} доступно только ${stock?.quantity || 0} ${product?.unit || "шт."}` }, { status: 409 });
-      }
-
-      const nextProcessed = line.processedQuantity + quantity;
-      await db.update(stocks).set({ quantity: stock.quantity - quantity, updatedAt: sql`CURRENT_TIMESTAMP` })
-        .where(and(eq(stocks.productId, line.productId), eq(stocks.cellId, cellId)));
-      await db.update(warehouseDocumentLines).set({ processedQuantity: nextProcessed }).where(eq(warehouseDocumentLines.id, line.id));
-
-      const allLines = await db.select().from(warehouseDocumentLines).where(eq(warehouseDocumentLines.documentId, documentId));
-      const completed = allLines.every((row) => {
-        const processed = row.id === line.id ? nextProcessed : row.processedQuantity;
-        return processed >= row.plannedQuantity - 0.000001;
+      if (!documentId || !lineId || !cellId || quantity <= 0) return Response.json({ error: "Укажите документ, позицию, ячейку и количество", status: 400 }, { status: 400 });
+      const result = await withHardwareTransaction(async (client) => {
+        const docResult = await client.query<{ id: string; number: string; status: string; recipient: string; comment: string }>(
+          "SELECT id, number, status, recipient, comment FROM warehouse_documents WHERE id = $1 AND type = 'issue' FOR UPDATE", [documentId]);
+        if (!docResult.rowCount) return { error: "Документ выдачи не найден", status: 404 };
+        const document = docResult.rows[0];
+        if (document.status === "completed" || document.status === "cancelled") return { error: "Документ уже закрыт", status: 409 };
+        const lineResult = await client.query<{ id: string; product_id: string; planned_quantity: number; processed_quantity: number }>(
+          "SELECT id, product_id, planned_quantity, processed_quantity FROM warehouse_document_lines WHERE id = $1 AND document_id = $2 FOR UPDATE", [lineId, documentId]);
+        if (!lineResult.rowCount) return { error: "Позиция выдачи не найдена", status: 404 };
+        const line = lineResult.rows[0];
+        const remaining = Number(line.planned_quantity) - Number(line.processed_quantity);
+        if (quantity > remaining + 0.000001) return { error: `Осталось выдать ${remaining}`, status: 409 };
+        const cellResult = await client.query<{ code: string; blocked: boolean }>("SELECT code, blocked FROM cells WHERE id = $1", [cellId]);
+        if (!cellResult.rowCount || cellResult.rows[0].blocked) return { error: "Ячейка недоступна", status: 409 };
+        const stockResult = await client.query<{ quantity: number }>(
+          "UPDATE stocks SET quantity = quantity - $1, updated_at = CURRENT_TIMESTAMP WHERE product_id = $2 AND cell_id = $3 AND quantity >= $1 RETURNING quantity",
+          [quantity, line.product_id, cellId]);
+        if (!stockResult.rowCount) return { error: "Недостаточно материала в ячейке", status: 409 };
+        const nextProcessed = Number(line.processed_quantity) + quantity;
+        await client.query("UPDATE warehouse_document_lines SET processed_quantity = $1 WHERE id = $2", [nextProcessed, line.id]);
+        const outstanding = await client.query(
+          "SELECT 1 FROM warehouse_document_lines WHERE document_id = $1 AND processed_quantity < planned_quantity - 0.000001 LIMIT 1", [documentId]);
+        const completed = outstanding.rowCount === 0;
+        await client.query("UPDATE warehouse_documents SET status = $1, completed_at = $2 WHERE id = $3",
+          [completed ? "completed" : "partial", completed ? new Date().toISOString() : null, documentId]);
+        await client.query(
+          "INSERT INTO movements (id, type, product_id, cell_id, quantity, operator, source, document_id, recipient, comment) VALUES ($1, 'Выдача', $2, $3, $4, $5, 'issue', $6, $7, $8)",
+          [crypto.randomUUID(), line.product_id, cellId, -quantity, operator, documentId, document.recipient, clean(body.comment) || document.comment]);
+        await client.query(
+          "INSERT INTO activity_logs (id, action, entity_type, entity_id, entity_name, details, operator) VALUES ($1, 'Выдача', 'Документ', $2, $3, $4, $5)",
+          [crypto.randomUUID(), documentId, document.number, `${quantity} ед. · ${cellResult.rows[0].code} → ${document.recipient}`, operator]);
+        return { ok: true, completed, lineCompleted: nextProcessed >= Number(line.planned_quantity) - 0.000001 };
       });
-      await db.update(warehouseDocuments).set({
-        status: completed ? "completed" : "partial",
-        completedAt: completed ? new Date().toISOString() : null,
-      }).where(eq(warehouseDocuments.id, documentId));
-
-      await db.insert(movements).values({
-        id: crypto.randomUUID(), type: "Выдача", productId: line.productId, cellId,
-        quantity: -quantity, operator, source: "issue", documentId,
-        recipient: document.recipient, comment: clean(body.comment) || document.comment,
-      });
-      await logActivity({
-        action: "Выдача",
-        entityType: "Документ",
-        entityId: documentId,
-        entityName: document.number,
-        details: `${product?.name || "Материал"}: ${quantity} ${product?.unit || "ед."} · ${cell.code} → ${document.recipient}`,
-      });
-
-      return Response.json({ ok: true, completed, lineCompleted: nextProcessed >= line.plannedQuantity - 0.000001 });
+      if ("error" in result) return Response.json({ error: result.error }, { status: result.status });
+      return Response.json(result);
     }
 
     return Response.json({ error: "Неизвестная операция" }, { status: 400 });
