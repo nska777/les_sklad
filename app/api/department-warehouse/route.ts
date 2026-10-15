@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/db";
+import { getDb, withHardwareTransaction } from "@/db";
 import {
   departmentCells,
   departmentInventorySnapshots,
@@ -11,7 +11,7 @@ import {
   departmentRacks,
   departmentStocks,
 } from "@/db/schema";
-import { isWarehouseCode, warehouseName } from "@/lib/warehouse-auth";
+import { isWarehouseCode, warehouseName, verifySessionToken } from "@/lib/warehouse-auth";
 
 export const dynamic = "force-dynamic";
 const clean = (value: unknown) => String(value ?? "").trim();
@@ -69,7 +69,11 @@ export async function GET(request: NextRequest) {
       const lines = await db.select().from(departmentMixLines).where(eq(departmentMixLines.mixId, mix.id));
       return { ...mix, lines: lines.map((line) => ({ ...line, productName: productById.get(line.productId)?.name || "Материал", cellCode: cellById.get(line.cellId)?.code || "" })) };
     }));
-    return NextResponse.json({ warehouse: { code: ctx.warehouseCode, name: warehouseName(ctx.warehouseCode) }, racks, cells, products, stocks, movements: movementRows, mixes: mixRows, inventories });
+    const cancelled = await db.select({ batchId: departmentMovements.batchId }).from(departmentMovements).where(and(eq(departmentMovements.warehouseCode, ctx.warehouseCode), eq(departmentMovements.type, "Отмена смешивания")));
+    const cancelledIds = new Set(cancelled.map((row) => row.batchId));
+    const session = await verifySessionToken(request.cookies.get("warehouse_session")?.value);
+    const canCancelMix = ctx.warehouseCode === "semi" && session?.username.toLowerCase() === "roman" && session.warehouses.includes("semi");
+    return NextResponse.json({ warehouse: { code: ctx.warehouseCode, name: warehouseName(ctx.warehouseCode) }, racks, cells, products, stocks, movements: movementRows, mixes: mixRows.map((mix) => ({ ...mix, cancelled: cancelledIds.has(mix.id) })), inventories, canCancelMix });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Не удалось загрузить склад" }, { status: 500 });
   }
@@ -206,6 +210,91 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    if (action === "issueMix" && ctx.warehouseCode === "semi") {
+      const lines = Array.isArray(body.lines) ? body.lines as Array<Record<string, unknown>> : [];
+      if (!lines.length) return NextResponse.json({ error: "Добавьте компоненты" }, { status: 400 });
+      const parsed = lines.map((line) => ({ productId: clean(line.productId), cellId: clean(line.cellId), quantity: amount(line.quantity), unit: clean(line.unit) }));
+      if (parsed.some((line) => !line.productId || !line.cellId || !Number.isFinite(line.quantity) || line.quantity <= 0)) return NextResponse.json({ error: "Проверьте компоненты и количество" }, { status: 400 });
+      const result = await withHardwareTransaction(async (client) => {
+        const aggregated = new Map<string, { productId: string; cellId: string; quantity: number }>();
+        for (const line of parsed) {
+          const key = `${line.productId}:${line.cellId}`;
+          const prev = aggregated.get(key);
+          aggregated.set(key, { productId: line.productId, cellId: line.cellId, quantity: (prev?.quantity || 0) + line.quantity });
+        }
+        const keys = [...aggregated.values()].sort((a, b) => (a.productId + a.cellId).localeCompare(b.productId + b.cellId));
+        for (const line of keys) {
+          const product = await client.query("SELECT id FROM department_products WHERE id = $1 AND warehouse_code = 'semi'", [line.productId]);
+          const cell = await client.query("SELECT id FROM department_cells WHERE id = $1 AND warehouse_code = 'semi' AND blocked = false", [line.cellId]);
+          if (!product.rowCount || !cell.rowCount) throw new Error("Материал или ячейка недоступны");
+          const updated = await client.query(
+            "UPDATE department_stocks SET quantity = quantity - $1, updated_at = CURRENT_TIMESTAMP WHERE warehouse_code = 'semi' AND product_id = $2 AND cell_id = $3 AND quantity >= $1 RETURNING quantity",
+            [line.quantity, line.productId, line.cellId]);
+          if (!updated.rowCount) throw new Error("Недостаточно материала в ячейке. Обновите остатки");
+        }
+        const mixId = crypto.randomUUID();
+        await client.query(
+          "INSERT INTO department_mixes (id, warehouse_code, name, recipient, document_number, result_quantity, result_unit, comment, operator) VALUES ($1, 'semi', $2, $3, $4, $5, $6, $7, $8)",
+          [mixId, clean(body.name) || "Полуфабрикат", clean(body.recipient), clean(body.documentNumber), Math.max(0, amount(body.resultQuantity)), clean(body.resultUnit) || "шт.", clean(body.comment), ctx.operator]);
+        for (const line of parsed) {
+          await client.query("INSERT INTO department_mix_lines (id, mix_id, product_id, cell_id, quantity, unit) VALUES ($1, $2, $3, $4, $5, $6)",
+            [crypto.randomUUID(), mixId, line.productId, line.cellId, line.quantity, line.unit || "шт."]);
+          await client.query(
+            "INSERT INTO department_movements (id, warehouse_code, type, product_id, from_cell_id, to_cell_id, quantity, recipient, comment, operator, document_number, source_name, source_location, batch_id) VALUES ($1, 'semi', 'Смешивание/Выдача', $2, $3, NULL, $4, $5, $6, $7, $8, '', '', $9)",
+            [crypto.randomUUID(), line.productId, line.cellId, line.quantity, clean(body.recipient), clean(body.comment), ctx.operator, clean(body.documentNumber), mixId]);
+        }
+        return { ok: true, mixId };
+      });
+      return NextResponse.json(result);
+    }
+
+    if (action === "cancelMix") {
+      const session = await verifySessionToken(request.cookies.get("warehouse_session")?.value);
+      if (ctx.warehouseCode !== "semi" || session?.username.toLowerCase() !== "roman" || !session.warehouses.includes("semi")) {
+        return NextResponse.json({ error: "Отмена доступна только пользователю roman на складе полуфабрикатов" }, { status: 403 });
+      }
+      const mixId = clean(body.mixId);
+      if (!mixId) return NextResponse.json({ error: "Укажите документ" }, { status: 400 });
+      const result = await withHardwareTransaction(async (client) => {
+        const mix = await client.query<{ id: string; document_number: string; recipient: string }>(
+          "SELECT id, document_number, recipient FROM department_mixes WHERE id = $1 AND warehouse_code = 'semi' FOR UPDATE", [mixId]);
+        if (!mix.rowCount) throw new Error("Документ не найден");
+        const previous = await client.query("SELECT 1 FROM department_movements WHERE warehouse_code = 'semi' AND batch_id = $1 AND type = 'Отмена смешивания' LIMIT 1", [mixId]);
+        if (previous.rowCount) throw new Error("Документ уже отменён");
+        const lines = await client.query<{ product_id: string; cell_id: string; quantity: number }>(
+          "SELECT product_id, cell_id, quantity FROM department_mix_lines WHERE mix_id = $1 ORDER BY product_id, cell_id FOR UPDATE", [mixId]);
+        const movements = await client.query<{ product_id: string; from_cell_id: string; quantity: number }>(
+          "SELECT product_id, from_cell_id, quantity FROM department_movements WHERE warehouse_code = 'semi' AND batch_id = $1 AND type = 'Смешивание/Выдача' ORDER BY product_id, from_cell_id FOR UPDATE", [mixId]);
+        if (!lines.rowCount || !movements.rowCount) throw new Error("Нет списаний для возврата");
+        const totals = (rows: Array<{ product_id: string; cell_id?: string; from_cell_id?: string; quantity: number }>) => {
+          const map = new Map<string, number>();
+          for (const row of rows) {
+            const key = `${row.product_id}:${row.cell_id || row.from_cell_id}`;
+            map.set(key, (map.get(key) || 0) + Number(row.quantity));
+          }
+          return map;
+        };
+        const expected = totals(lines.rows), actual = totals(movements.rows);
+        if (expected.size !== actual.size || [...expected].some(([key, qty]) => Math.abs(qty - (actual.get(key) || 0)) > 0.000001)) {
+          throw new Error("Списания и состав документа не совпадают. Автоматический возврат запрещён");
+        }
+        for (const [key, quantity] of expected) {
+          const line = lines.rows.find((row) => `${row.product_id}:${row.cell_id}` === key)!;
+          if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("Некорректное количество");
+          const cell = await client.query("SELECT 1 FROM department_cells WHERE id = $1 AND warehouse_code = 'semi'", [line.cell_id]);
+          if (!cell.rowCount) throw new Error("Исходная ячейка отсутствует");
+          await client.query(
+            "INSERT INTO department_stocks (warehouse_code, product_id, cell_id, quantity, updated_at) VALUES ('semi', $1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (warehouse_code, product_id, cell_id) DO UPDATE SET quantity = department_stocks.quantity + EXCLUDED.quantity, updated_at = CURRENT_TIMESTAMP",
+            [line.product_id, line.cell_id, quantity]);
+          await client.query(
+            "INSERT INTO department_movements (id, warehouse_code, type, product_id, from_cell_id, to_cell_id, quantity, recipient, comment, operator, document_number, source_name, source_location, batch_id) VALUES ($1, 'semi', 'Отмена смешивания', $2, NULL, $3, $4, $5, $6, $7, $8, '', '', $9)",
+            [crypto.randomUUID(), line.product_id, line.cell_id, quantity, mix.rows[0].recipient, "Возврат по отменённому документу", session.username, mix.rows[0].document_number, mixId]);
+        }
+        return { ok: true, mixId };
+      });
+      return NextResponse.json(result);
+    }
+
     if (action === "issueMix") {
       const lines = Array.isArray(body.lines) ? body.lines as Array<Record<string, unknown>> : [];
       if (!lines.length) return NextResponse.json({ error: "Добавьте компоненты смеси" }, { status: 400 });
@@ -228,40 +317,3 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, mixId });
     }
 
-    if (action === "inventorySnapshot") {
-      const products = await db.select().from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.archived, false)));
-      const cells = await db.select().from(departmentCells).where(eq(departmentCells.warehouseCode, ctx.warehouseCode));
-      const stocks = await db.select().from(departmentStocks).where(and(eq(departmentStocks.warehouseCode, ctx.warehouseCode), sql`${departmentStocks.quantity} > 0`));
-      const productById = new Map(products.map((x) => [x.id, x])); const cellById = new Map(cells.map((x) => [x.id, x]));
-      const snapshot = stocks.map((s) => ({ productId: s.productId, name: productById.get(s.productId)?.name || "", sku: productById.get(s.productId)?.sku || "", unit: productById.get(s.productId)?.unit || "", cellId: s.cellId, cellCode: cellById.get(s.cellId)?.code || "", quantity: Number(s.quantity) }));
-      const id = crypto.randomUUID();
-      await db.insert(departmentInventorySnapshots).values({ id, warehouseCode: ctx.warehouseCode, snapshotJson: JSON.stringify(snapshot), createdBy: ctx.operator });
-      return NextResponse.json({ ok: true, id, rows: snapshot.length });
-    }
-
-    if (action === "undoMovement") {
-      const id = clean(body.id);
-      const movement = (await db.select().from(departmentMovements).where(and(eq(departmentMovements.id, id), eq(departmentMovements.warehouseCode, ctx.warehouseCode))).limit(1))[0];
-      if (!movement) return NextResponse.json({ error: "Движение не найдено" }, { status: 404 });
-      if (movement.batchId) return NextResponse.json({ error: "Смешивание отменяется целиком через отдельную операцию" }, { status: 409 });
-      if (movement.type === "Приход" && movement.toCellId) {
-        const now = await getStock(db, ctx.warehouseCode, movement.productId, movement.toCellId);
-        if (now < movement.quantity) return NextResponse.json({ error: "Нельзя отменить: часть прихода уже использована" }, { status: 409 });
-        await setStock(db, ctx.warehouseCode, movement.productId, movement.toCellId, now - movement.quantity);
-      } else if (movement.type === "Выдача" && movement.fromCellId) {
-        await setStock(db, ctx.warehouseCode, movement.productId, movement.fromCellId, await getStock(db, ctx.warehouseCode, movement.productId, movement.fromCellId) + movement.quantity);
-      } else if (movement.type === "Перемещение" && movement.fromCellId && movement.toCellId) {
-        const target = await getStock(db, ctx.warehouseCode, movement.productId, movement.toCellId);
-        if (target < movement.quantity) return NextResponse.json({ error: "Нельзя отменить: товар уже перемещён дальше" }, { status: 409 });
-        await setStock(db, ctx.warehouseCode, movement.productId, movement.toCellId, target - movement.quantity);
-        await setStock(db, ctx.warehouseCode, movement.productId, movement.fromCellId, await getStock(db, ctx.warehouseCode, movement.productId, movement.fromCellId) + movement.quantity);
-      }
-      await db.delete(departmentMovements).where(eq(departmentMovements.id, id));
-      return NextResponse.json({ ok: true });
-    }
-
-    return NextResponse.json({ error: "Неизвестная операция" }, { status: 400 });
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Операция не выполнена" }, { status: 500 });
-  }
-}
