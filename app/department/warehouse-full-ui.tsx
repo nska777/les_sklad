@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import {
   ArrowDownToLine, ArrowRightLeft, ArrowUpFromLine, Boxes, ClipboardList, FileSpreadsheet,
-  History, Layers3, Loader2, MapPin, PackagePlus, PaintBucket, Plus, RefreshCw, Search,
+  History, Layers3, Loader2, MapPin, PackagePlus, PaintBucket, Plus, RefreshCw, Search, ChevronDown, ChevronRight,
   ShieldAlert, Trash2, TreePine, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -233,7 +233,7 @@ function IssueMix({ products, cells, stocks, saving, onSubmit, mixes }: { produc
     })}</div>
     <div className="mt-3 flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setLines((cur) => [...cur, { productId: "", cellId: "", quantity: "" }])}><Plus/> Добавить компонент</Button><Button disabled={saving} className="accent-button"><ArrowUpFromLine/> Смешать и выдать</Button></div><div className="mt-4"><Label>Комментарий</Label><Input name="comment" className="mt-1.5"/></div>
   </form>
-  {mixes.length > 0 && <section className="panel p-5"><h3 className="font-black">Последние смеси</h3><div className="mt-3 space-y-2">{mixes.slice(0, 8).map((m) => <div key={m.id} className="rounded-xl border p-3"><div className="flex flex-wrap justify-between gap-2"><b>{m.name}</b><span className="text-xs text-slate-500">{dateFmt(m.createdAt)} · {m.operator}</span></div><div className="mt-1 text-sm text-slate-600">{m.lines.map((l) => `${l.productName}: ${fmt(l.quantity)} ${l.unit} (${l.cellCode})`).join(" + ")}</div><div className="mt-1 text-xs font-semibold">Итог: {fmt(m.resultQuantity)} {m.resultUnit}{m.recipient ? ` · ${m.recipient}` : ""}</div></div>)}</div></section>}
+  {mixes.length > 0 && <section className="panel p-5"><h3 className="font-black">Выданные полуфабрикаты</h3><div className="mt-3 space-y-2">{mixes.map((m) => <details key={m.id} className="group overflow-hidden rounded-xl border bg-white"><summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-4 hover:bg-slate-50"><div className="flex items-center gap-3"><ChevronRight size={17} className="text-slate-500 group-open:hidden"/><ChevronDown size={17} className="hidden text-slate-500 group-open:block"/><div><div className="font-bold">{m.documentNumber ? `№ ${m.documentNumber} · ` : ""}{m.name}</div><div className="text-xs text-slate-500">{m.recipient || "Получатель не указан"} · {m.lines.length} компонентов</div></div></div><div className="text-right"><div className="font-semibold">{fmt(m.resultQuantity)} {m.resultUnit}</div><div className="text-xs text-slate-500">{dateFmt(m.createdAt)} · {m.operator}</div></div></summary><div className="border-t bg-slate-50/60 p-4"><div className="mb-3 text-sm text-slate-600">Документ: {m.documentNumber || "Без номера"} · Получатель: {m.recipient || "—"} · Выдал: {m.operator}</div><div className="overflow-x-auto rounded-lg border bg-white"><table className="w-full min-w-[540px] text-sm"><thead><tr className="bg-slate-100 text-left"><th className="p-3">Компонент</th><th className="p-3">Исходная ячейка</th><th className="p-3 text-right">Списано</th></tr></thead><tbody>{m.lines.map((l) => <tr key={l.id} className="border-t"><td className="p-3 font-medium">{l.productName}</td><td className="p-3 font-mono">{l.cellCode}</td><td className="p-3 text-right font-bold">{fmt(l.quantity)} {l.unit}</td></tr>)}</tbody></table></div></div></details>)}</div></section>}
   </div>;
 }
 
