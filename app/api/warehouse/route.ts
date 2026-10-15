@@ -327,7 +327,7 @@ export async function POST(request: Request) {
       const [document] = await db.select().from(warehouseDocuments).where(eq(warehouseDocuments.id, documentId)).limit(1);
       const [line] = await db.select().from(warehouseDocumentLines).where(eq(warehouseDocumentLines.documentId, documentId)).limit(1);
       if (!document || document.type !== "issue" || !line) return Response.json({ error: "Задание на выдачу не найдено" }, { status: 404 });
-      if (document.status === "completed") return Response.json({ error: "Это задание уже выполнено" }, { status: 409 });
+      if (document.status === "completed" || document.status === "cancelled") return Response.json({ error: "Это задание уже выполнено" }, { status: 409 });
       const remaining = line.plannedQuantity - line.processedQuantity;
       if (quantity > remaining) return Response.json({ error: `По заданию осталось выдать ${remaining}` }, { status: 409 });
       const [[cell], [stock], [product]] = await Promise.all([
