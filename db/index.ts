@@ -112,3 +112,22 @@ export async function getDb() {
   await ensureSchema((statement) => client.query(statement).then(() => undefined));
   return drizzleNeon(client, { schema });
 }
+
+/** Runs a stock mutation atomically against the same direct PostgreSQL pool. */
+export async function withHardwareTransaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  if (!hasDirectPostgresConfig()) throw new Error("Для транзакционной выдачи требуется прямое подключение PostgreSQL");
+  const pool = getPgPool();
+  await ensureSchema((statement) => pool.query(statement).then(() => undefined));
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
