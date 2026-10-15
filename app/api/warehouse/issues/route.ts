@@ -48,7 +48,7 @@ export async function POST(request: Request) {
         db.select({ planned: warehouseDocumentLines.plannedQuantity, processed: warehouseDocumentLines.processedQuantity, documentId: warehouseDocumentLines.documentId })
           .from(warehouseDocumentLines)
           .innerJoin(warehouseDocuments, eq(warehouseDocumentLines.documentId, warehouseDocuments.id))
-          .where(and(eq(warehouseDocumentLines.productId, productId), eq(warehouseDocuments.type, "issue"), ne(warehouseDocuments.status, "completed"), ne(warehouseDocuments.status, "cancelled")))),
+          .where(and(eq(warehouseDocumentLines.productId, productId), eq(warehouseDocuments.type, "issue"), ne(warehouseDocuments.status, "completed"), ne(warehouseDocuments.status, "cancelled"))),
       ]);
       const available = availableRows.reduce((sum, row) => sum + row.quantity, 0);
       const reserved = reservationRows
