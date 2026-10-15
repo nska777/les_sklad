@@ -121,7 +121,7 @@ export async function POST(request: Request) {
         db.select().from(warehouseDocumentLines).where(and(eq(warehouseDocumentLines.id, lineId), eq(warehouseDocumentLines.documentId, documentId))).limit(1),
       ]);
       if (!document || document.type !== "issue" || !line) return Response.json({ error: "Позиция выдачи не найдена" }, { status: 404 });
-      if (document.status === "completed") return Response.json({ error: "Документ уже закрыт" }, { status: 409 });
+      if (document.status === "completed" || document.status === "cancelled") return Response.json({ error: "Документ уже закрыт" }, { status: 409 });
 
       const remaining = line.plannedQuantity - line.processedQuantity;
       if (quantity > remaining) return Response.json({ error: `По этой позиции осталось выдать ${remaining}` }, { status: 409 });
