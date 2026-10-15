@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
     const rows = await db.select({
       id: movements.id,
       createdAt: movements.createdAt,
+      documentId: movements.documentId,
+      documentStatus: warehouseDocuments.status,
       documentNumber: warehouseDocuments.number,
       oneCId: warehouseDocuments.oneCId,
       recipient: movements.recipient,
@@ -37,6 +39,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      canCancel: session.username.toLowerCase() === 'roman',
       rows: rows.map((row) => ({
         ...row,
         quantity: Math.abs(Number(row.quantity || 0)),
