@@ -246,10 +246,27 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
   const confirmCellCode = (rawValue: string) => {
     if (!activeLine) return toast.error("Сначала выберите позицию документа");
     if (!issueProductVerified) return toast.error("Сначала подтвердите штрихкод материала");
+
     const value = rawValue.trim().toUpperCase();
-    const cell = cells.find((item) => item.code.toUpperCase() === value);
-    const location = cell && locations.find((item) => item.cellId === cell.id);
-    if (!cell || cell.blocked || !location) return toast.error("В этой ячейке нет выбранного материала");
+    const matchingCells = cells.filter((item) => !item.blocked && item.code.trim().toUpperCase() === value);
+
+    // Код ячейки может повторяться у разных стеллажей/сторон. Раньше бралась
+    // первая попавшаяся ячейка с таким кодом, и если материал фактически лежал
+    // в другой ячейке с тем же кодом, мастер ошибочно показывал
+    // "В этой ячейке нет выбранного материала".
+    const location = locations.find((stock) => matchingCells.some((cell) => cell.id === stock.cellId));
+    const cell = location ? matchingCells.find((item) => item.id === location.cellId) : undefined;
+
+    if (!cell || !location) {
+      const expectedCodes = locations
+        .map((stock) => cells.find((item) => item.id === stock.cellId)?.code)
+        .filter(Boolean)
+        .join(", ");
+      return toast.error("В этой ячейке нет выбранного материала", {
+        description: expectedCodes ? `Материал находится: ${expectedCodes}` : "Для материала не найден адрес хранения",
+      });
+    }
+
     setIssueCell(cell.id);
     setIssueQuantity(String(Math.min(location.quantity, remainingLine)));
     setCellScan("");
