@@ -10,11 +10,12 @@ type Props = {
   onDetected: (value: string) => void;
   disabled?: boolean;
   className?: string;
+  acceptedValues?: string[];
 };
 
 type ScannerControls = { stop: () => void };
 
-export function MobileBarcodeScanner({ label, onDetected, disabled, className }: Props) {
+export function MobileBarcodeScanner({ label, onDetected, disabled, className, acceptedValues }: Props) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [starting, setStarting] = useState(false);
@@ -121,6 +122,16 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className }:
           const value = result.getText().trim();
           if (!value) return;
 
+          const normalized = value.toUpperCase();
+          const allowed = (acceptedValues || [])
+            .map((item) => String(item || "").trim().toUpperCase())
+            .filter(Boolean);
+          if (allowed.length && !allowed.includes(normalized)) {
+            // Камера может одновременно видеть QR ячейки и Code128 материала.
+            // Чужой код игнорируем и продолжаем сканирование вместо ложной ошибки.
+            return;
+          }
+
           foundRef.current = true;
           if (navigator.vibrate) navigator.vibrate(70);
           onDetected(value);
@@ -160,7 +171,7 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className }:
       window.clearTimeout(timer);
       stop();
     };
-  }, [attempt, close, onDetected, open, stop]);
+  }, [acceptedValues, attempt, close, onDetected, open, stop]);
 
   return <>
     <Button type="button" variant="outline" disabled={disabled} onClick={() => setOpen(true)} className={className}>
