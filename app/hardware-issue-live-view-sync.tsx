@@ -14,7 +14,15 @@ type Progress = {
   updatedAt: string;
 };
 
-function findIssueDocumentId() {
+function findIssueContext() {
+  const dialog = document.querySelector<HTMLElement>("[role='dialog'][data-issue-document-id][data-issue-line-id]");
+  if (dialog) {
+    return {
+      documentId: dialog.dataset.issueDocumentId || "",
+      lineId: dialog.dataset.issueLineId || "",
+    };
+  }
+
   const title = Array.from(document.querySelectorAll("h2")).find((node) => node.textContent?.trim() === "Собрать и выдать");
   const panel = title?.closest("section.panel");
   const select = panel
@@ -22,7 +30,7 @@ function findIssueDocumentId() {
         .map((node) => node as HTMLSelectElement)
         .find((node) => Array.from(node.options).some((option) => option.textContent?.includes("поз.")))
     : null;
-  return select?.value || "";
+  return { documentId: select?.value || "", lineId: "" };
 }
 
 function findStep(dialog: HTMLElement, title: string) {
@@ -88,13 +96,15 @@ export function HardwareIssueLiveViewSync() {
     };
 
     const load = async () => {
-      const documentId = findIssueDocumentId();
+      const { documentId, lineId } = findIssueContext();
       if (!documentId) return;
       try {
         const response = await fetch(`/api/warehouse/issues/live-progress?documentId=${encodeURIComponent(documentId)}`, { cache: "no-store" });
         if (!response.ok) return;
         const body = await response.json() as { progress?: Progress[] };
-        const progress = body.progress?.[0] || null;
+        const progress = lineId
+          ? body.progress?.find((item) => item.lineId === lineId) || null
+          : body.progress?.[0] || null;
         if (!progress || stopped) return;
         const fingerprint = [progress.documentId, progress.lineId, progress.productVerified, progress.cellCode, progress.quantity, progress.quantityVerified, progress.updatedAt].join("|");
         if (fingerprint !== lastFingerprint) {
