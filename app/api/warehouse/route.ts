@@ -9,8 +9,10 @@ const number = (value: unknown, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const cellAddress = (rackCode: string, shelfIndex: number, cellIndex: number) =>
-  `${rackCode}${shelfIndex + 1}${String.fromCharCode(65 + cellIndex)}`;
+const cellAddress = (rackCode: string, shelfIndex: number, cellIndex: number, side = "front") => {
+  const suffix = `${shelfIndex + 1}${String.fromCharCode(65 + cellIndex)}`;
+  return side === "back" ? `${rackCode}-B-${suffix}` : `${rackCode}${suffix}`;
+};
 
 async function createUniqueSku(db: Awaited<ReturnType<typeof getDb>>) {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -74,7 +76,7 @@ export async function GET() {
     const activeRackIds = new Set(rackRows.map((rack) => rack.id));
     const cellRows = allCellRows.filter((cell) => activeRackIds.has(cell.rackId)).map((cell) => {
       const rack = rackById.get(cell.rackId);
-      const address = rack ? cellAddress(rack.code, cell.rowIndex, cell.columnIndex) : cell.code;
+      const address = rack ? cellAddress(rack.code, cell.rowIndex, cell.columnIndex, cell.side) : cell.code;
       return { ...cell, code: address, label: address };
     });
     return Response.json({ racks: rackRows, cells: cellRows, products: productRows, stocks: stockRows, movements: movementRows, activities: activityRows, documents: documentRows });
@@ -161,7 +163,7 @@ export async function POST(request: Request) {
         for (let index = 0; index < values.length; index += 8) await db.insert(cells).values(values.slice(index, index + 8));
       } else if (rack.code !== code) {
         for (const cell of oldCells) {
-          const address = cellAddress(code, cell.rowIndex, cell.columnIndex);
+          const address = cellAddress(code, cell.rowIndex, cell.columnIndex, cell.side);
           await db.update(cells).set({ code: address, label: address }).where(eq(cells.id, cell.id));
         }
       }
