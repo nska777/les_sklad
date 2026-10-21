@@ -463,7 +463,11 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
         if (!open) resetIssueVerification();
       }}
     >
-      <DialogContent className="max-h-[94vh] w-[calc(100vw-20px)] overflow-y-auto p-0 sm:max-w-2xl [&_[data-slot=dialog-close]]:right-4 [&_[data-slot=dialog-close]]:top-4 [&_[data-slot=dialog-close]]:z-20 [&_[data-slot=dialog-close]]:flex [&_[data-slot=dialog-close]]:h-9 [&_[data-slot=dialog-close]]:w-9 [&_[data-slot=dialog-close]]:items-center [&_[data-slot=dialog-close]]:justify-center [&_[data-slot=dialog-close]]:rounded-full [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-white/20 [&_[data-slot=dialog-close]]:bg-white/10 [&_[data-slot=dialog-close]]:text-white [&_[data-slot=dialog-close]]:opacity-100 [&_[data-slot=dialog-close]]:hover:bg-white/20">
+      <DialogContent
+        data-issue-document-id={activeIssue?.id || ""}
+        data-issue-line-id={activeLine?.lineId || ""}
+        className="max-h-[94vh] w-[calc(100vw-20px)] overflow-y-auto p-0 sm:max-w-2xl [&_[data-slot=dialog-close]]:right-4 [&_[data-slot=dialog-close]]:top-4 [&_[data-slot=dialog-close]]:z-20 [&_[data-slot=dialog-close]]:flex [&_[data-slot=dialog-close]]:h-9 [&_[data-slot=dialog-close]]:w-9 [&_[data-slot=dialog-close]]:items-center [&_[data-slot=dialog-close]]:justify-center [&_[data-slot=dialog-close]]:rounded-full [&_[data-slot=dialog-close]]:border [&_[data-slot=dialog-close]]:border-white/20 [&_[data-slot=dialog-close]]:bg-white/10 [&_[data-slot=dialog-close]]:text-white [&_[data-slot=dialog-close]]:opacity-100 [&_[data-slot=dialog-close]]:hover:bg-white/20"
+      >
         {activeIssue && activeLine && <>
           <div className="border-b border-black/10 bg-slate-950 px-5 py-5 pr-16 text-white sm:px-7 sm:pr-16">
             <DialogHeader>
@@ -487,12 +491,22 @@ export function WarehouseWorkflows({ products, cells, stocks, documents, operato
             <IssueStep number={1} title="Документ открыт" description={`${activeIssue.number} · ${activeIssue.recipient}`} done />
 
             <IssueStep number={2} title="Отсканируйте штрихкод материала" description={issueProductVerified ? `Подтверждено: ${activeLine.productName}` : "Сканер проверит, что в руках именно нужный материал"} done={issueProductVerified} active={!issueProductVerified}>
-              {!issueProductVerified && <MobileBarcodeScanner label="Сканировать материал" onDetected={confirmProductCode} className="h-11 w-full sm:w-auto" />}
+              {!issueProductVerified && <MobileBarcodeScanner
+                  label="Сканировать материал"
+                  onDetected={confirmProductCode}
+                  acceptedValues={[activeProduct?.barcode, activeProduct?.sku, activeLine.productSku].filter(Boolean).map((value) => String(value))}
+                  className="h-11 w-full sm:w-auto"
+                />}
             </IssueStep>
 
             <IssueStep number={3} title="Отсканируйте QR ячейки" description={issueCell ? `Ячейка подтверждена: ${cells.find((cell) => cell.id === issueCell)?.code || ""}` : `Материал лежит: ${locations.map((stock) => cells.find((cell) => cell.id === stock.cellId)?.code).filter(Boolean).join(", ") || "адрес не найден"}`} done={!!issueCell} active={issueProductVerified && !issueCell} disabled={!issueProductVerified}>
               {issueProductVerified && !issueCell && <>
-                <MobileBarcodeScanner label="Сканировать QR ячейки" onDetected={confirmCellCode} className="h-11 w-full sm:w-auto" />
+                <MobileBarcodeScanner
+                  label="Сканировать QR ячейки"
+                  onDetected={confirmCellCode}
+                  acceptedValues={locations.map((stock) => cells.find((cell) => cell.id === stock.cellId)?.code).filter(Boolean).map((value) => String(value))}
+                  className="h-11 w-full sm:w-auto"
+                />
                 <form onSubmit={scanCell} className="mt-2 flex gap-2"><Input value={cellScan} onChange={(e) => setCellScan(e.target.value)} placeholder="Или введите код ячейки" className="font-mono" /><Button type="submit" variant="outline">Проверить</Button></form>
               </>}
             </IssueStep>
