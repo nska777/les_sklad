@@ -46,6 +46,55 @@ async function setStock(db: Awaited<ReturnType<typeof getDb>>, warehouseCode: st
     await db.insert(departmentStocks).values({ warehouseCode, productId, cellId, quantity: safe, updatedAt: new Date().toISOString() });
   }
 }
+async function ensureUnplacedCell(db: Awaited<ReturnType<typeof getDb>>, warehouseCode: string) {
+  const rackCode = "SYS_UNPLACED";
+  let rack = (await db.select().from(departmentRacks).where(and(
+    eq(departmentRacks.warehouseCode, warehouseCode),
+    eq(departmentRacks.code, rackCode),
+  )).limit(1))[0];
+
+  if (!rack) {
+    const rackId = crypto.randomUUID();
+    await db.insert(departmentRacks).values({
+      id: rackId,
+      warehouseCode,
+      name: "Ожидает размещения",
+      code: rackCode,
+      rows: 1,
+      columns: 1,
+      storageType: "system",
+      width: 1,
+      depth: 1,
+      posX: 0,
+      posZ: 0,
+      rotation: 0,
+      archived: true,
+    });
+    rack = (await db.select().from(departmentRacks).where(eq(departmentRacks.id, rackId)).limit(1))[0];
+  }
+
+  let cell = (await db.select().from(departmentCells).where(and(
+    eq(departmentCells.warehouseCode, warehouseCode),
+    eq(departmentCells.rackId, rack.id),
+  )).limit(1))[0];
+
+  if (!cell) {
+    const cellId = crypto.randomUUID();
+    await db.insert(departmentCells).values({
+      id: cellId,
+      warehouseCode,
+      rackId: rack.id,
+      code: "ОЖИДАЕТ-РАЗМЕЩЕНИЯ",
+      label: "Ожидает размещения",
+      rowIndex: 0,
+      columnIndex: 0,
+      blocked: true,
+    });
+    cell = (await db.select().from(departmentCells).where(eq(departmentCells.id, cellId)).limit(1))[0];
+  }
+
+  return cell;
+}
 function autoBarcode() { return `${Date.now()}${Math.floor(Math.random() * 100000).toString().padStart(5, "0")}`; }
 
 export async function GET(request: NextRequest) {
@@ -124,12 +173,59 @@ export async function POST(request: NextRequest) {
     if (action === "createProduct") {
       const name = clean(body.name);
       const sku = clean(body.sku).toUpperCase() || `PAINT-${Date.now().toString(36).toUpperCase()}`;
+      const unit = clean(body.unit) || "кг";
+      const initialQuantity = Math.max(0, amount(body.initialQuantity));
+
       if (!name) return NextResponse.json({ error: "Укажите название материала" }, { status: 400 });
       const duplicate = (await db.select({ id: departmentProducts.id }).from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.sku, sku))).limit(1))[0];
       if (duplicate) return NextResponse.json({ error: "Материал с таким артикулом уже существует" }, { status: 409 });
+
       const id = crypto.randomUUID();
-      await db.insert(departmentProducts).values({ id, warehouseCode: ctx.warehouseCode, name, sku, barcode: clean(body.barcode) || autoBarcode(), category: clean(body.category) || "Краска", subcategory: clean(body.subcategory), brand: clean(body.brand), color: clean(body.color), ral: clean(body.ral), unit: clean(body.unit) || "кг", packType: clean(body.packType), packSize: Math.max(0, amount(body.packSize)), imageUrl: clean(body.imageUrl), minStock: Math.max(0, amount(body.minStock)), comment: clean(body.comment), oneCId: clean(body.oneCId) || null, createdBy: ctx.operator, source: clean(body.source) || "manual", archived: false });
-      return NextResponse.json({ ok: true, id });
+      await db.insert(departmentProducts).values({
+        id,
+        warehouseCode: ctx.warehouseCode,
+        name,
+        sku,
+        barcode: clean(body.barcode) || autoBarcode(),
+        category: clean(body.category) || "Краска",
+        subcategory: clean(body.subcategory),
+        brand: clean(body.brand),
+        color: clean(body.color),
+        ral: clean(body.ral),
+        unit,
+        packType: clean(body.packType),
+        packSize: Math.max(0, amount(body.packSize)),
+        imageUrl: clean(body.imageUrl),
+        minStock: Math.max(0, amount(body.minStock)),
+        comment: clean(body.comment),
+        oneCId: clean(body.oneCId) || null,
+        createdBy: ctx.operator,
+        source: clean(body.source) || "manual",
+        archived: false,
+      });
+
+      if (initialQuantity > 0) {
+        const cell = await ensureUnplacedCell(db, ctx.warehouseCode);
+        await setStock(db, ctx.warehouseCode, id, cell.id, initialQuantity);
+        await db.insert(departmentMovements).values({
+          id: crypto.randomUUID(),
+          warehouseCode: ctx.warehouseCode,
+          type: "Приход",
+          productId: id,
+          fromCellId: null,
+          toCellId: cell.id,
+          quantity: initialQuantity,
+          recipient: "",
+          comment: clean(body.comment) || "Первичный фактический остаток",
+          operator: ctx.operator,
+          documentNumber: "НАЧАЛЬНЫЙ ОСТАТОК",
+          sourceName: "Ручное добавление",
+          sourceLocation: "",
+          batchId: "",
+        });
+      }
+
+      return NextResponse.json({ ok: true, id, initialQuantityApplied: initialQuantity });
     }
 
     if (action === "updateProduct") {
