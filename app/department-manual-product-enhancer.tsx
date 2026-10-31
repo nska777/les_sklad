@@ -273,33 +273,8 @@ export function DepartmentManualProductEnhancer() {
         if (url.includes("/api/department-warehouse") && !url.includes("/api/department-warehouse-audit") && init?.method?.toUpperCase() === "POST" && response.ok && typeof init.body === "string") {
           const payload = JSON.parse(init.body) as Record<string, unknown>;
           if (payload.action === "createProduct") {
-            const body = await response.clone().json() as { id?: string };
+            const body = await response.clone().json() as { id?: string; initialQuantityApplied?: number };
             if (body.id) {
-              const initialQuantity = parsePositive(payload.initialQuantity);
-              if (initialQuantity > 0) {
-                const receipt = await originalFetch("/api/department-warehouse-receipt", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "x-warehouse-code": window.location.pathname.split("/")[2] || "",
-                  },
-                  body: JSON.stringify({
-                    documentNumber: "НАЧАЛЬНЫЙ ОСТАТОК",
-                    sourceName: "Ручное добавление",
-                    productId: body.id,
-                    quantity: initialQuantity,
-                    unit: String(payload.unit || "кг"),
-                    cellId: "",
-                    comment: payload.comment || "Первичный фактический остаток",
-                  }),
-                });
-                if (!receipt.ok) {
-                  const receiptBody = await receipt.json().catch(() => ({})) as { error?: string };
-                  toast.error("Материал создан, но количество не записано", { description: receiptBody.error || "Повторите оприходование через вкладку «Приход»." });
-                  return response;
-                }
-              }
-
               void originalFetch("/api/department-warehouse-audit", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
