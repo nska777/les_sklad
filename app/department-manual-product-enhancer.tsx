@@ -31,9 +31,19 @@ function relabel(form: HTMLFormElement, name: string, text: string) {
 
 function addActualQuantityField(form: HTMLFormElement) {
   if (form.elements.namedItem("initialQuantity")) return;
+
   const unit = form.elements.namedItem("unit");
   const nameInput = form.elements.namedItem("name");
-  if (!(unit instanceof HTMLSelectElement) || !(nameInput instanceof HTMLInputElement)) return;
+
+  // В разных складах поле единицы измерения реализовано по-разному:
+  // где-то это select, а в ЛДСП — обычный input. Раньше из-за проверки
+  // только на HTMLSelectElement поле количества вообще не создавалось,
+  // хотя submit-валидация продолжала его требовать.
+  if (
+    !(unit instanceof HTMLInputElement || unit instanceof HTMLSelectElement)
+    || !(nameInput instanceof HTMLInputElement)
+  ) return;
+
   const unitWrap = fieldWrap(unit);
   if (!unitWrap?.parentElement) return;
 
