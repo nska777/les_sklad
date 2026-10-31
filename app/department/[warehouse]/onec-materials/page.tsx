@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import ReactBarcode from "react-barcode";
-import { ArrowLeft, Layers3, Loader2, Search, Upload, X } from "lucide-react";
+import { ArrowLeft, Layers3, Loader2, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Rack = { id: string; code: string; name: string; storageType: string };
@@ -14,6 +14,7 @@ type CatalogItem = { id: string; name: string; sku: string; barcode: string; one
 type Stock = { productId: string; cellId: string; quantity: number };
 type ApiData = { products: CatalogItem[]; racks: Rack[]; cells: Cell[]; stocks: Stock[]; error?: string };
 type ImportItem = { name: string; sku?: string; oneCId?: string; barcode?: string; category?: string; unit?: string; quantity?: number; sourceRow?: number };
+type AuthMe = { user?: { username?: string; role?: string } };
 
 const fmt = (v: number) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 6 }).format(v);
 const norm = (v: unknown) => String(v ?? "").trim().toLowerCase().replace(/ё/g, "е");
@@ -71,6 +72,7 @@ export default function DepartmentOneCMaterialsPage() {
   const [fileName, setFileName] = useState(""), [qtyLabel, setQtyLabel] = useState(""), [barcodeLabel, setBarcodeLabel] = useState("");
   const [placing, setPlacing] = useState<CatalogItem | null>(null), [rackId, setRackId] = useState(""), [cellId, setCellId] = useState("");
   const [quantity, setQuantity] = useState(""), [inputUnit, setInputUnit] = useState("кг");
+  const [canDelete, setCanDelete] = useState(false), [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +81,15 @@ export default function DepartmentOneCMaterialsPage() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() as Promise<AuthMe> : null)
+      .then((body) => {
+        const user = body?.user;
+        setCanDelete(Boolean(user && user.role === "admin" && String(user.username || "").trim().toLowerCase() === "roman"));
+      })
+      .catch(() => setCanDelete(false));
+  }, []);
 
   const rackMap = useMemo(() => new Map(data.racks.map((r) => [r.id, r])), [data.racks]);
   const cellMap = useMemo(() => new Map(data.cells.map((c) => [c.id, c])), [data.cells]);
@@ -100,13 +111,56 @@ export default function DepartmentOneCMaterialsPage() {
   };
   const doImport = async () => { if (!importItems.length) return; setSaving(true); try { const r = await fetch("/api/department-onec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", items: importItems }) }); const body = await r.json() as { error?: string; created?: number; updated?: number }; if (!r.ok) throw new Error(body.error || "Импорт не выполнен"); toast.success(`Справочник 1С: ${body.created || 0} новых, ${body.updated || 0} обновлено`); setImportOpen(false); setImportItems([]); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка импорта"); } finally { setSaving(false); } };
 
+  const deleteCatalogItem = async (item: CatalogItem) => {
+    if (!canDelete) return;
+    if (!window.confirm(`Удалить из справочника 1С позицию «${item.name}»?\n\nФактические остатки и движения склада не удаляются.`)) return;
+    setDeletingId(item.id);
+    try {
+      const r = await fetch("/api/department-onec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: item.id }),
+      });
+      const body = await r.json() as { error?: string };
+      if (!r.ok) throw new Error(body.error || "Не удалось удалить позицию");
+      toast.success("Позиция удалена из справочника 1С");
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка удаления");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const clearCatalog = async () => {
+    if (!canDelete || !data.products.length) return;
+    if (!window.confirm(`Удалить ВСЕ позиции справочника 1С для этого склада?\n\nПозиций: ${data.products.length}. Фактические остатки и движения склада не удаляются.`)) return;
+    if (!window.confirm("Подтвердите ещё раз: очистить весь загруженный справочник 1С?")) return;
+    setSaving(true);
+    try {
+      const r = await fetch("/api/department-onec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear" }),
+      });
+      const body = await r.json() as { error?: string; deleted?: number };
+      if (!r.ok) throw new Error(body.error || "Не удалось очистить справочник");
+      toast.success(`Справочник 1С очищен: удалено ${body.deleted ?? 0}`);
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка очистки");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const total1c = data.products.reduce((s, p) => s + Number(p.quantity1c || 0), 0), totalFact = Array.from(factByCatalog.values()).reduce((s, v) => s + v, 0), placedCount = data.products.filter((p) => (factByCatalog.get(p.id) || 0) > 0).length;
 
   return <main className="min-h-screen px-4 py-5 text-[var(--foreground)] sm:px-7"><div className="mx-auto max-w-[1650px] space-y-4">
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад в склад</Link><p className="eyebrow">Справочник 1С → фактический склад краски</p><h1 className="page-title">Материалы из 1С</h1><p className="page-description">1С остаётся справочником. Факт появляется только после точного размещения.</p></div><div className="flex gap-2"><Link href={`${base}/rack-layout`} data-same-tab="true" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-4 font-semibold"><Layers3 size={16}/> 3D-склад</Link><button onClick={() => setImportOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 font-bold text-white"><Upload size={16}/> Загрузить Excel</button></div></div>
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад в склад</Link><p className="eyebrow">Справочник 1С → фактический склад краски</p><h1 className="page-title">Материалы из 1С</h1><p className="page-description">1С остаётся справочником. Факт появляется только после точного размещения.</p></div><div className="flex flex-wrap gap-2">{canDelete && <button disabled={saving || !data.products.length} onClick={() => void clearCatalog()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 font-bold text-red-700 disabled:opacity-40"><Trash2 size={16}/> Удалить всё</button>}<Link href={`${base}/rack-layout`} data-same-tab="true" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-4 font-semibold"><Layers3 size={16}/> 3D-склад</Link><button onClick={() => setImportOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 font-bold text-white"><Upload size={16}/> Загрузить Excel</button></div></div>
     <section className="grid gap-3 sm:grid-cols-3"><div className="panel p-5"><div className="text-sm text-slate-500">В справочнике 1С</div><div className="mt-1 text-3xl font-black">{data.products.length}</div><div className="mt-1 text-xs text-slate-400">По 1С: {fmt(total1c)}</div></div><div className="panel p-5"><div className="text-sm text-slate-500">Фактически размещено</div><div className="mt-1 text-3xl font-black">{placedCount}</div><div className="mt-1 text-xs text-slate-400">Факт: {fmt(totalFact)}</div></div><div className="panel p-5"><div className="text-sm text-slate-500">Ещё не размещено</div><div className="mt-1 text-3xl font-black">{data.products.filter((p) => (factByCatalog.get(p.id) || 0) <= 0).length}</div></div></section>
     <section className="panel overflow-hidden p-0"><div className="flex items-center justify-between gap-3 border-b p-4"><div className="relative w-full max-w-2xl"><Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск: наименование, артикул, штрихкод, ID 1С..." className="h-12 w-full rounded-xl border pl-10 pr-3"/></div><div className="text-sm text-slate-400">Найдено: {filtered.length}</div></div>
-      {loading ? <div className="flex h-60 items-center justify-center"><Loader2 className="animate-spin"/></div> : <div className="divide-y">{shown.map((p) => { const fact = Number(factByCatalog.get(p.id) || 0), locations = locationsByCatalog.get(p.id) || []; return <div key={p.id} className="grid gap-3 p-4 xl:grid-cols-[1.7fr_.55fr_.55fr_1fr_1.15fr_auto] xl:items-center"><div><div className="font-black">{p.name}</div><div className="mt-1 text-xs text-slate-400">{p.sku}{p.oneCId ? ` · ID 1С: ${p.oneCId}` : ""}</div></div><div><div className="text-xs text-slate-400">По 1С</div><b>{fmt(p.quantity1c)} {p.unit}</b></div><div><div className="text-xs text-slate-400">Факт</div><b>{fmt(fact)}</b></div><div><div className="text-xs text-slate-400">Где лежит</div><div className="text-sm">{locations.length ? locations.join(" · ") : "Не размещён"}</div></div><div><div className="text-xs text-slate-400">Штрихкод</div><div className="mt-1 inline-block rounded-lg bg-white px-2 py-1">{p.barcode ? <ReactBarcode value={p.barcode} height={28} width={1.15} displayValue fontSize={10} margin={0}/> : <span className="text-xs text-slate-400">Создастся при размещении</span>}</div></div><button onClick={() => openPlace(p)} className="rounded-xl bg-orange-500 px-4 py-2 font-bold text-white">Разместить</button></div>; })}{!shown.length && <div className="p-12 text-center text-slate-400">Ничего не найдено</div>}</div>}
+      {loading ? <div className="flex h-60 items-center justify-center"><Loader2 className="animate-spin"/></div> : <div className="divide-y">{shown.map((p) => { const fact = Number(factByCatalog.get(p.id) || 0), locations = locationsByCatalog.get(p.id) || []; return <div key={p.id} className="grid gap-3 p-4 xl:grid-cols-[1.7fr_.55fr_.55fr_1fr_1.15fr_auto] xl:items-center"><div><div className="font-black">{p.name}</div><div className="mt-1 text-xs text-slate-400">{p.sku}{p.oneCId ? ` · ID 1С: ${p.oneCId}` : ""}</div></div><div><div className="text-xs text-slate-400">По 1С</div><b>{fmt(p.quantity1c)} {p.unit}</b></div><div><div className="text-xs text-slate-400">Факт</div><b>{fmt(fact)}</b></div><div><div className="text-xs text-slate-400">Где лежит</div><div className="text-sm">{locations.length ? locations.join(" · ") : "Не размещён"}</div></div><div><div className="text-xs text-slate-400">Штрихкод</div><div className="mt-1 inline-block rounded-lg bg-white px-2 py-1">{p.barcode ? <ReactBarcode value={p.barcode} height={28} width={1.15} displayValue fontSize={10} margin={0}/> : <span className="text-xs text-slate-400">Создастся при размещении</span>}</div></div><div className="flex items-center gap-2"><button onClick={() => openPlace(p)} className="rounded-xl bg-orange-500 px-4 py-2 font-bold text-white">Разместить</button>{canDelete && <button title="Удалить позицию из справочника 1С" disabled={deletingId === p.id} onClick={() => void deleteCatalogItem(p)} className="grid h-10 w-10 place-items-center rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40"><Trash2 size={17}/></button>}</div></div>; })}{!shown.length && <div className="p-12 text-center text-slate-400">Ничего не найдено</div>}</div>}
       {pages > 1 && <div className="flex justify-center gap-3 border-t p-4"><button disabled={page <= 1} onClick={() => setPage((x) => x - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Назад</button><span>{page} / {pages}</span><button disabled={page >= pages} onClick={() => setPage((x) => x + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Далее</button></div>}
     </section>
   </div>
