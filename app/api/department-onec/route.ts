@@ -3,7 +3,7 @@ import { doublePrecision, pgTable, text } from "drizzle-orm/pg-core";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { departmentCells, departmentMovements, departmentProducts, departmentRacks, departmentStocks } from "@/db/schema";
-import { isWarehouseCode } from "@/lib/warehouse-auth";
+import { isWarehouseCode, verifySessionToken } from "@/lib/warehouse-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,11 @@ function context(request: NextRequest) {
   const code = request.headers.get("x-warehouse-code");
   if (!isWarehouseCode(code) || code === "hardware") return null;
   return { warehouseCode: code, operator: decodeURIComponent(request.headers.get("x-warehouse-user") || "Кладовщик") };
+}
+
+async function canDeleteOneCCatalog(request: NextRequest) {
+  const session = await verifySessionToken(request.cookies.get("warehouse_session")?.value);
+  return Boolean(session && session.role === "admin" && session.username.trim().toLowerCase() === "roman");
 }
 
 async function ensureCatalog(db: Awaited<ReturnType<typeof getDb>>) {
@@ -191,10 +196,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, productId: product.id, barcode: product.barcode });
     }
 
-    if (action === "clear") {
+    if (action === "delete" || action === "clear") {
+      if (!await canDeleteOneCCatalog(request)) {
+        return NextResponse.json({ error: "Удаление справочника 1С доступно только администратору Roman" }, { status: 403 });
+      }
+
+      if (action === "delete") {
+        const id = clean(body.id);
+        if (!id) return NextResponse.json({ error: "Позиция не выбрана" }, { status: 400 });
+
+        const [item] = await db.select().from(oneCCatalog)
+          .where(and(eq(oneCCatalog.id, id), eq(oneCCatalog.warehouseCode, ctx.warehouseCode)))
+          .limit(1);
+        if (!item) return NextResponse.json({ error: "Позиция справочника 1С не найдена" }, { status: 404 });
+
+        await db.delete(oneCCatalog).where(and(eq(oneCCatalog.id, id), eq(oneCCatalog.warehouseCode, ctx.warehouseCode)));
+        await pruneUnplacedImportedProducts(db, ctx.warehouseCode);
+        return NextResponse.json({ ok: true, deleted: 1 });
+      }
+
+      const existing = await db.select({ id: oneCCatalog.id }).from(oneCCatalog).where(eq(oneCCatalog.warehouseCode, ctx.warehouseCode));
       await db.delete(oneCCatalog).where(eq(oneCCatalog.warehouseCode, ctx.warehouseCode));
       await pruneUnplacedImportedProducts(db, ctx.warehouseCode);
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, deleted: existing.length });
     }
 
     return NextResponse.json({ error: "Неизвестная операция" }, { status: 400 });
