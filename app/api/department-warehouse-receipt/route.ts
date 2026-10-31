@@ -11,7 +11,7 @@ const num = (value: unknown) => {
   const n = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 };
-const allowedUnits = ["кг", "г", "мг", "л", "мл", "шт."] as const;
+const allowedUnits = ["кг", "г", "мг", "л", "мл", "шт.", "шт", "м²", "лист"] as const;
 
 type Unit = typeof allowedUnits[number];
 
@@ -37,7 +37,9 @@ function generatedBarcode() {
 function unitGroup(unit: string) {
   if (["кг", "г", "мг"].includes(unit)) return "mass";
   if (["л", "мл"].includes(unit)) return "volume";
-  if (unit === "шт.") return "count";
+  if (unit === "шт." || unit === "шт") return "count";
+  if (unit === "м²") return "area";
+  if (unit === "лист") return "sheet";
   return "other";
 }
 
