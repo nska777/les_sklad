@@ -87,7 +87,7 @@ function enhanceLdspForm(form: HTMLFormElement) {
   if (title !== "Добавить материал вручную") return;
   form.dataset.ldspEnhanced = "1";
 
-  ["oneCId", "subcategory", "imageUrl", "packSize", "minStock", "packType", "initialQuantity"].forEach((name) => removeField(form, name));
+  ["oneCId", "subcategory", "imageUrl", "packSize", "minStock", "packType"].forEach((name) => removeField(form, name));
 
   replaceCategory(form);
   replaceUnit(form);
@@ -99,6 +99,7 @@ function enhanceLdspForm(form: HTMLFormElement) {
   setLabel(form, "ral", "Материал");
   setLabel(form, "color", "Цвет");
   setLabel(form, "unit", "Единица измерения *");
+  setLabel(form, "initialQuantity", "Фактическое количество *");
   setLabel(form, "comment", "Комментарий *");
 
   const placeholders: Record<string, string> = {
@@ -106,6 +107,7 @@ function enhanceLdspForm(form: HTMLFormElement) {
     brand: "Название поставщика",
     ral: "Например: древесная плита / берёза / дуб",
     color: "Например: дуб сонома",
+    initialQuantity: "Например: 20",
     comment: "Краткий комментарий к материалу",
   };
   Object.entries(placeholders).forEach(([name, value]) => {
