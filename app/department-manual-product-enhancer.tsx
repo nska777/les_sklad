@@ -279,7 +279,10 @@ export function DepartmentManualProductEnhancer() {
               if (initialQuantity > 0) {
                 const receipt = await originalFetch("/api/department-warehouse-receipt", {
                   method: "POST",
-                  headers: { "Content-Type": "application/json" },
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-warehouse-code": window.location.pathname.split("/")[2] || "",
+                  },
                   body: JSON.stringify({
                     documentNumber: "НАЧАЛЬНЫЙ ОСТАТОК",
                     sourceName: "Ручное добавление",
