@@ -146,7 +146,13 @@ export async function POST(request: NextRequest) {
     if (action === "import") {
       const items = Array.isArray(body.items) ? body.items as Array<Record<string, unknown>> : [];
       if (!items.length) return NextResponse.json({ error: "В файле нет строк" }, { status: 400 });
-      let created = 0, updated = 0;
+      const replaceCatalog = body.replaceCatalog === true;
+      const existingBefore = replaceCatalog
+        ? await db.select({ id: oneCCatalog.id }).from(oneCCatalog).where(eq(oneCCatalog.warehouseCode, ctx.warehouseCode))
+        : [];
+      const keepIds = new Set<string>();
+      let created = 0, updated = 0, deleted = 0;
+
       for (let index = 0; index < Math.min(items.length, 5000); index += 1) {
         const item = items[index]; const name = clean(item.name); if (!name) continue;
         const sku = clean(item.sku).toUpperCase(); const oneCId = clean(item.oneCId); const barcode = clean(item.barcode);
@@ -159,11 +165,26 @@ export async function POST(request: NextRequest) {
           category: clean(item.category) || current?.category || "Краска", unit: clean(item.unit) || current?.unit || "кг",
           quantity: Math.max(0, amount(item.quantity)), sourceRow: Number(item.sourceRow || index + 2), updatedAt: new Date().toISOString(),
         };
-        if (current) { await db.update(oneCCatalog).set(values).where(eq(oneCCatalog.id, current.id)); updated += 1; }
-        else { await db.insert(oneCCatalog).values({ id: crypto.randomUUID(), warehouseCode: ctx.warehouseCode, linkedProductId: null, ...values }); created += 1; }
+        if (current) {
+          await db.update(oneCCatalog).set(values).where(eq(oneCCatalog.id, current.id));
+          keepIds.add(current.id);
+          updated += 1;
+        } else {
+          await db.insert(oneCCatalog).values({ id: crypto.randomUUID(), warehouseCode: ctx.warehouseCode, linkedProductId: null, ...values });
+          created += 1;
+        }
       }
+
+      if (replaceCatalog) {
+        for (const previous of existingBefore) {
+          if (keepIds.has(previous.id)) continue;
+          await db.delete(oneCCatalog).where(and(eq(oneCCatalog.id, previous.id), eq(oneCCatalog.warehouseCode, ctx.warehouseCode)));
+          deleted += 1;
+        }
+      }
+
       await pruneUnplacedImportedProducts(db, ctx.warehouseCode);
-      return NextResponse.json({ ok: true, created, updated, references: created + updated });
+      return NextResponse.json({ ok: true, created, updated, deleted, references: created + updated });
     }
 
     if (action === "place") {
