@@ -7,6 +7,7 @@ type DepartmentSnapshot = {
   cells?: Row[];
   products?: Row[];
   stocks?: Row[];
+  unplacedStocks?: Row[];
   movements?: Row[];
   mixes?: Row[];
   inventories?: Row[];
@@ -47,7 +48,7 @@ function movement(snapshot: DepartmentSnapshot, warehouseCode: string, operator:
   const from = values.fromCellId ? cell(snapshot, text(values.fromCellId)) : undefined;
   const to = values.toCellId ? cell(snapshot, text(values.toCellId)) : undefined;
   const row = {
-    id: crypto.randomUUID(),
+    id: text(values._operationId) || crypto.randomUUID(),
     warehouseCode,
     type: text(values.type),
     productId: text(values.productId),
@@ -83,9 +84,15 @@ export function applyDepartmentOfflineOperation(scope: string, warehouseCode: st
 
   if (action === "receive") {
     const productId = text(body.productId), cellId = text(body.cellId), quantity = number(body.quantity);
-    if (!product(snapshot, productId) || !cell(snapshot, cellId) || quantity <= 0) throw new Error("Проверьте материал, место хранения и количество");
-    setStock(snapshot, warehouseCode, productId, cellId, stockQuantity(snapshot, productId, cellId) + quantity);
-    movement(snapshot, warehouseCode, operator, { type: "Приход", productId, toCellId: cellId, quantity, comment: body.comment, documentNumber: body.documentNumber, sourceName: body.sourceName, sourceLocation: body.sourceLocation });
+    if (!product(snapshot, productId) || (cellId && !cell(snapshot, cellId)) || quantity <= 0) throw new Error("Проверьте материал, место хранения и количество");
+    if (cellId) setStock(snapshot, warehouseCode, productId, cellId, stockQuantity(snapshot, productId, cellId) + quantity);
+    else {
+      const rows = snapshot.unplacedStocks ||= [];
+      const existing = rows.find((x) => text(x.productId) === productId);
+      if (existing) existing.quantity = number(existing.quantity) + quantity;
+      else rows.push({ warehouseCode, productId, quantity, updatedAt: new Date().toISOString() });
+    }
+    movement(snapshot, warehouseCode, operator, { type: "Приход", productId, toCellId: cellId, quantity, comment: body.comment, documentNumber: body.documentNumber, sourceName: body.sourceName, sourceLocation: body.sourceLocation, _operationId: body._operationId });
   } else if (action === "transfer") {
     const productId = text(body.productId), fromCellId = text(body.fromCellId), toCellId = text(body.toCellId), quantity = number(body.quantity);
     if (!product(snapshot, productId) || !cell(snapshot, fromCellId) || !cell(snapshot, toCellId) || fromCellId === toCellId || quantity <= 0) throw new Error("Проверьте материал, ячейки и количество");
