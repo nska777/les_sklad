@@ -187,6 +187,194 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, created, updated, deleted, references: created + updated });
     }
 
+    if (action === "autoPlaceAll") {
+      if (ctx.warehouseCode !== "paint") {
+        return NextResponse.json({ error: "Авторазмещение ЛКМ доступно только для склада краски" }, { status: 403 });
+      }
+
+      const catalog = await db.select().from(oneCCatalog)
+        .where(eq(oneCCatalog.warehouseCode, ctx.warehouseCode))
+        .orderBy(asc(oneCCatalog.name));
+      if (!catalog.length) return NextResponse.json({ error: "Справочник 1С пуст" }, { status: 400 });
+      if (catalog.length > 240) {
+        return NextResponse.json({ error: "Для одного стеллажа поддерживается максимум 240 позиций. Уменьшите справочник или используйте несколько стеллажей." }, { status: 400 });
+      }
+
+      const rackCode = "ЛКМ-1С";
+      const rackName = "Лакокрасочный склад";
+      const columns = Math.min(20, Math.max(1, catalog.length));
+      const rows = Math.max(1, Math.ceil(catalog.length / columns));
+
+      let rack = (await db.select().from(departmentRacks)
+        .where(and(eq(departmentRacks.warehouseCode, ctx.warehouseCode), eq(departmentRacks.code, rackCode)))
+        .limit(1))[0];
+
+      if (!rack) {
+        const rackId = crypto.randomUUID();
+        await db.insert(departmentRacks).values({
+          id: rackId,
+          warehouseCode: ctx.warehouseCode,
+          name: rackName,
+          code: rackCode,
+          rows,
+          columns,
+          storageType: "rack",
+          width: Math.max(8, Math.min(18, columns * 0.72)),
+          depth: 1.6,
+          posX: 0,
+          posZ: 0,
+          rotation: 0,
+          archived: false,
+        });
+        rack = (await db.select().from(departmentRacks).where(eq(departmentRacks.id, rackId)).limit(1))[0];
+      } else {
+        await db.update(departmentRacks).set({
+          name: rackName,
+          rows,
+          columns,
+          storageType: "rack",
+          width: Math.max(8, Math.min(18, columns * 0.72)),
+          depth: 1.6,
+          archived: false,
+        }).where(eq(departmentRacks.id, rack.id));
+      }
+
+      let cells = await db.select().from(departmentCells)
+        .where(and(eq(departmentCells.warehouseCode, ctx.warehouseCode), eq(departmentCells.rackId, rack.id)))
+        .orderBy(asc(departmentCells.rowIndex), asc(departmentCells.columnIndex));
+
+      const required = rows * columns;
+      if (cells.length < required) {
+        const existingKeys = new Set(cells.map((cell) => `${cell.rowIndex}:${cell.columnIndex}`));
+        const newCells = [];
+        for (let index = 0; index < required; index += 1) {
+          const rowIndex = Math.floor(index / columns);
+          const columnIndex = index % columns;
+          const key = `${rowIndex}:${columnIndex}`;
+          if (existingKeys.has(key)) continue;
+          const code = `${rackCode}-${String(rowIndex + 1).padStart(2, "0")}-${String(columnIndex + 1).padStart(2, "0")}`;
+          newCells.push({
+            id: crypto.randomUUID(),
+            warehouseCode: ctx.warehouseCode,
+            rackId: rack.id,
+            code,
+            label: code,
+            rowIndex,
+            columnIndex,
+            blocked: false,
+          });
+        }
+        if (newCells.length) await db.insert(departmentCells).values(newCells);
+        cells = await db.select().from(departmentCells)
+          .where(and(eq(departmentCells.warehouseCode, ctx.warehouseCode), eq(departmentCells.rackId, rack.id)))
+          .orderBy(asc(departmentCells.rowIndex), asc(departmentCells.columnIndex));
+      }
+
+      let placed = 0;
+      let createdProducts = 0;
+      let alreadyPlaced = 0;
+
+      for (let index = 0; index < catalog.length; index += 1) {
+        const item = catalog[index];
+        const cell = cells[index];
+        if (!cell) break;
+
+        let product = item.linkedProductId
+          ? (await db.select().from(departmentProducts).where(and(eq(departmentProducts.id, item.linkedProductId), eq(departmentProducts.warehouseCode, ctx.warehouseCode))).limit(1))[0]
+          : undefined;
+        if (!product && item.oneCId) {
+          product = (await db.select().from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.oneCId, item.oneCId))).limit(1))[0];
+        }
+        if (!product && item.sku) {
+          product = (await db.select().from(departmentProducts).where(and(eq(departmentProducts.warehouseCode, ctx.warehouseCode), eq(departmentProducts.sku, item.sku))).limit(1))[0];
+        }
+
+        if (!product) {
+          const id = crypto.randomUUID();
+          await db.insert(departmentProducts).values({
+            id,
+            warehouseCode: ctx.warehouseCode,
+            name: item.name,
+            sku: item.sku || `1C-${id.slice(0, 8).toUpperCase()}`,
+            barcode: item.barcode || autoBarcode(),
+            category: item.category || "Краска",
+            subcategory: "",
+            brand: "",
+            color: "",
+            ral: "",
+            unit: item.unit || "кг",
+            packType: "",
+            packSize: 0,
+            imageUrl: "",
+            minStock: 0,
+            comment: "",
+            oneCId: item.oneCId || null,
+            createdBy: ctx.operator,
+            source: "1c",
+            archived: false,
+          });
+          product = (await db.select().from(departmentProducts).where(eq(departmentProducts.id, id)).limit(1))[0];
+          createdProducts += 1;
+        } else {
+          await db.update(departmentProducts).set({
+            name: item.name,
+            barcode: item.barcode || product.barcode,
+            oneCId: item.oneCId || product.oneCId,
+            unit: item.unit || product.unit,
+            archived: false,
+          }).where(eq(departmentProducts.id, product.id));
+        }
+
+        await db.update(oneCCatalog).set({ linkedProductId: product.id }).where(eq(oneCCatalog.id, item.id));
+
+        const allStocks = await db.select().from(departmentStocks).where(and(
+          eq(departmentStocks.warehouseCode, ctx.warehouseCode),
+          eq(departmentStocks.productId, product.id),
+          sql`${departmentStocks.quantity} > 0`,
+        ));
+        const currentTotal = allStocks.reduce((sum, stock) => sum + Number(stock.quantity || 0), 0);
+        const desired = Math.max(0, Number(item.quantity || 0));
+        const remaining = Math.max(0, desired - currentTotal);
+
+        if (remaining <= 1e-9) {
+          alreadyPlaced += 1;
+          continue;
+        }
+
+        await addStock(db, ctx.warehouseCode, product.id, cell.id, remaining);
+        await db.insert(departmentMovements).values({
+          id: crypto.randomUUID(),
+          warehouseCode: ctx.warehouseCode,
+          type: "Авторазмещение",
+          productId: product.id,
+          fromCellId: null,
+          toCellId: cell.id,
+          quantity: remaining,
+          recipient: "",
+          comment: "Автоматическое размещение из справочника 1С",
+          operator: ctx.operator,
+          documentNumber: "1С-АВТОРАЗМЕЩЕНИЕ",
+          sourceName: "Справочник 1С",
+          sourceLocation: rackName,
+          batchId: "",
+        });
+        placed += 1;
+      }
+
+      return NextResponse.json({
+        ok: true,
+        rackId: rack.id,
+        rackCode,
+        rackName,
+        rows,
+        columns,
+        cells: required,
+        placed,
+        createdProducts,
+        alreadyPlaced,
+      });
+    }
+
     if (action === "place") {
       const catalogId = clean(body.catalogId || body.productId), cellId = clean(body.cellId), quantity = amount(body.quantity);
       if (!catalogId || !cellId || quantity <= 0) return NextResponse.json({ error: "Выберите материал, ячейку и количество" }, { status: 400 });
