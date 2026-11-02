@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import ReactBarcode from "react-barcode";
-import { ArrowLeft, Layers3, Loader2, Search, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Layers3, Loader2, PackageCheck, Search, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Rack = { id: string; code: string; name: string; storageType: string };
@@ -150,6 +150,33 @@ export default function DepartmentOneCMaterialsPage() {
   };
   const doImport = async () => { if (!importItems.length) return; setSaving(true); try { const r = await fetch("/api/department-onec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", items: importItems, replaceCatalog: true }) }); const body = await r.json() as { error?: string; created?: number; updated?: number; deleted?: number }; if (!r.ok) throw new Error(body.error || "Импорт не выполнен"); toast.success(`Справочник 1С: ${body.created || 0} новых, ${body.updated || 0} обновлено, ${body.deleted || 0} старых удалено`); setImportOpen(false); setImportItems([]); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка импорта"); } finally { setSaving(false); } };
 
+  const autoPlaceAll = async () => {
+    if (!data.products.length || saving) return;
+    const rows = Math.ceil(data.products.length / Math.min(20, Math.max(1, data.products.length)));
+    const columns = Math.min(20, Math.max(1, data.products.length));
+    const cells = rows * columns;
+    if (!window.confirm(`Создать один большой стеллаж «Лакокрасочный склад» и автоматически разместить весь справочник 1С?\n\nМатериалов: ${data.products.length}\nСтеллаж: ${rows} полок × ${columns} ячеек = ${cells} мест\n\nКоличество из 1С будет принято как фактический остаток только в недостающей части. Уже размещённые остатки не задвоятся.`)) return;
+
+    setSaving(true);
+    try {
+      const r = await fetch("/api/department-onec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "autoPlaceAll" }),
+      });
+      const body = await r.json() as { error?: string; placed?: number; alreadyPlaced?: number; cells?: number; rows?: number; columns?: number; rackCode?: string };
+      if (!r.ok) throw new Error(body.error || "Авторазмещение не выполнено");
+      toast.success("Лакокрасочный склад создан и заполнен", {
+        description: `Размещено: ${body.placed || 0} · уже было размещено: ${body.alreadyPlaced || 0} · ячеек: ${body.cells || 0}`,
+      });
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Ошибка авторазмещения");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteCatalogItem = async (item: CatalogItem) => {
     if (!canDelete) return;
     if (!window.confirm(`Удалить из справочника 1С позицию «${item.name}»?\n\nФактические остатки и движения склада не удаляются.`)) return;
@@ -196,7 +223,7 @@ export default function DepartmentOneCMaterialsPage() {
   const total1c = data.products.reduce((s, p) => s + Number(p.quantity1c || 0), 0), totalFact = Array.from(factByCatalog.values()).reduce((s, v) => s + v, 0), placedCount = data.products.filter((p) => (factByCatalog.get(p.id) || 0) > 0).length;
 
   return <main className="min-h-screen px-4 py-5 text-[var(--foreground)] sm:px-7"><div className="mx-auto max-w-[1650px] space-y-4">
-    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад в склад</Link><p className="eyebrow">Справочник 1С → фактический склад краски</p><h1 className="page-title">Материалы из 1С</h1><p className="page-description">1С остаётся справочником. Факт появляется только после точного размещения.</p></div><div className="flex flex-wrap gap-2">{canDelete && <button disabled={saving || !data.products.length} onClick={() => void clearCatalog()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 font-bold text-red-700 disabled:opacity-40"><Trash2 size={16}/> Удалить всё</button>}<Link href={`${base}/rack-layout`} data-same-tab="true" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-4 font-semibold"><Layers3 size={16}/> 3D-склад</Link><button onClick={() => setImportOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 font-bold text-white"><Upload size={16}/> Загрузить Excel</button></div></div>
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between"><div><Link href={base} data-same-tab="true" className="mb-2 inline-flex items-center gap-2 text-sm font-semibold text-blue-700 hover:underline"><ArrowLeft size={16}/> Назад в склад</Link><p className="eyebrow">Справочник 1С → фактический склад краски</p><h1 className="page-title">Материалы из 1С</h1><p className="page-description">1С остаётся справочником. Факт появляется только после точного размещения.</p></div><div className="flex flex-wrap gap-2">{canDelete && <button disabled={saving || !data.products.length} onClick={() => void clearCatalog()} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 font-bold text-red-700 disabled:opacity-40"><Trash2 size={16}/> Удалить всё</button>}<button disabled={saving || !data.products.length || warehouse !== "paint"} onClick={() => void autoPlaceAll()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40"><PackageCheck size={16}/> Разместить весь материал</button><Link href={`${base}/rack-layout`} data-same-tab="true" className="inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-4 font-semibold"><Layers3 size={16}/> 3D-склад</Link><button onClick={() => setImportOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-orange-500 px-4 font-bold text-white"><Upload size={16}/> Загрузить Excel</button></div></div>
     <section className="grid gap-3 sm:grid-cols-3"><div className="panel p-5"><div className="text-sm text-slate-500">В справочнике 1С</div><div className="mt-1 text-3xl font-black">{data.products.length}</div><div className="mt-1 text-xs text-slate-400">По 1С: {fmt(total1c)}</div></div><div className="panel p-5"><div className="text-sm text-slate-500">Фактически размещено</div><div className="mt-1 text-3xl font-black">{placedCount}</div><div className="mt-1 text-xs text-slate-400">Факт: {fmt(totalFact)}</div></div><div className="panel p-5"><div className="text-sm text-slate-500">Ещё не размещено</div><div className="mt-1 text-3xl font-black">{data.products.filter((p) => (factByCatalog.get(p.id) || 0) <= 0).length}</div></div></section>
     <section className="panel overflow-hidden p-0"><div className="flex items-center justify-between gap-3 border-b p-4"><div className="relative w-full max-w-2xl"><Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск: наименование, артикул, штрихкод, ID 1С..." className="h-12 w-full rounded-xl border pl-10 pr-3"/></div><div className="text-sm text-slate-400">Найдено: {filtered.length}</div></div>
       {loading ? <div className="flex h-60 items-center justify-center"><Loader2 className="animate-spin"/></div> : <div className="divide-y">{shown.map((p) => { const fact = Number(factByCatalog.get(p.id) || 0), locations = locationsByCatalog.get(p.id) || []; return <div key={p.id} className="grid gap-3 p-4 xl:grid-cols-[1.7fr_.55fr_.55fr_1fr_1.15fr_auto] xl:items-center"><div><div className="font-black">{p.name}</div><div className="mt-1 text-xs text-slate-400">{p.sku}{p.oneCId ? ` · ID 1С: ${p.oneCId}` : ""}</div></div><div><div className="text-xs text-slate-400">По 1С</div><b>{fmt(p.quantity1c)} {p.unit}</b></div><div><div className="text-xs text-slate-400">Факт</div><b>{fmt(fact)}</b></div><div><div className="text-xs text-slate-400">Где лежит</div><div className="text-sm">{locations.length ? locations.join(" · ") : "Не размещён"}</div></div><div><div className="text-xs text-slate-400">Штрихкод</div><div className="mt-1 inline-block rounded-lg bg-white px-2 py-1">{p.barcode ? <ReactBarcode value={p.barcode} height={28} width={1.15} displayValue fontSize={10} margin={0}/> : <span className="text-xs text-slate-400">Создастся при размещении</span>}</div></div><div className="flex items-center gap-2"><button onClick={() => openPlace(p)} className="rounded-xl bg-orange-500 px-4 py-2 font-bold text-white">Разместить</button>{canDelete && <button title="Удалить позицию из справочника 1С" disabled={deletingId === p.id} onClick={() => void deleteCatalogItem(p)} className="grid h-10 w-10 place-items-center rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-40"><Trash2 size={17}/></button>}</div></div>; })}{!shown.length && <div className="p-12 text-center text-slate-400">Ничего не найдено</div>}</div>}
