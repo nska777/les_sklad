@@ -28,38 +28,77 @@ async function parseExcel(file: File) {
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: false });
   if (!matrix.length) throw new Error("Файл пустой");
-  let headerRow = matrix.findIndex((row) => row.some((v) => ["наименование", "товар", "материал", "name"].includes(norm(v))));
-  if (headerRow < 0) headerRow = 0;
-  const headers = matrix[headerRow] || [], rows = matrix.slice(headerRow + 1);
-  let nameCol = findCol(headers, ["наименование", "товар", "материал", "name"]);
-  if (nameCol < 0) nameCol = rows.some((r) => String(r[1] ?? "").trim()) ? 1 : 0;
+
+  const nameHeaders = ["номенклатура", "наименование", "товар", "материал", "name"];
+  let headerRow = matrix.findIndex((row) => row.some((v) => nameHeaders.includes(norm(v))));
+  if (headerRow < 0) throw new Error("Не найдена колонка «Номенклатура» / «Наименование»");
+
+  const headers = matrix[headerRow] || [];
+  const rows = matrix.slice(headerRow + 1);
+  const nameCol = findCol(headers, nameHeaders);
+  if (nameCol < 0) throw new Error("Не удалось определить колонку с номенклатурой");
+
   let qtyCol = findCol(headers, ["остаток", "количество", "кол-во", "кол во", "в наличии", "остаток на складе", "quantity", "qty"]);
   if (qtyCol < 0) {
     const candidates: Array<{ c: number; n: number }> = [];
     const width = Math.max(...matrix.map((r) => r.length), 0);
-    for (let c = 0; c < width; c += 1) {
-      if (c === nameCol) continue;
+    for (let c = nameCol + 1; c < width; c += 1) {
       let n = 0;
-      for (const row of rows.slice(0, 50)) {
+      for (const row of rows.slice(0, 200)) {
         const raw = String(row[c] ?? "").trim().replace(/\s/g, "").replace(",", ".");
         if (raw && Number.isFinite(Number(raw))) n += 1;
       }
-      if (n >= Math.min(3, Math.max(1, rows.length))) candidates.push({ c, n });
+      if (n >= 3) candidates.push({ c, n });
     }
-    candidates.sort((a, b) => Math.abs(a.c - nameCol) - Math.abs(b.c - nameCol) || b.n - a.n);
+    candidates.sort((a, b) => b.n - a.n || a.c - b.c);
     qtyCol = candidates[0]?.c ?? -1;
   }
+  if (qtyCol < 0) throw new Error("Не удалось определить колонку с остатком 1С");
+
   const skuCol = findCol(headers, ["артикул", "код", "sku", "код номенклатуры"]);
   const oneCCol = findCol(headers, ["id 1с", "id1с", "1c id", "onec id", "ид 1с", "идентификатор 1с"]);
   let barcodeCol = findCol(headers, ["штрихкод", "штрих-код", "штрих код", "barcode", "ean", "ean13", "ean-13", "gtin"]);
   if (barcodeCol < 0) barcodeCol = headers.findIndex((h) => { const t = norm(h); return t.includes("штрих") || t.includes("barcode") || t.includes("ean") || t.includes("gtin"); });
   const unitCol = findCol(headers, ["единица", "ед. изм.", "ед изм", "единица измерения", "unit"]);
   const categoryCol = findCol(headers, ["категория", "category"]);
-  const items = rows.map((row, index) => {
-    const name = String(row[nameCol] ?? "").trim(); if (!name) return null;
-    return { name, sku: skuCol >= 0 ? String(row[skuCol] ?? "").trim() : "", oneCId: oneCCol >= 0 ? String(row[oneCCol] ?? "").trim() : "", barcode: barcodeCol >= 0 ? barcodeValue(row[barcodeCol]) : "", category: categoryCol >= 0 ? String(row[categoryCol] ?? "").trim() : "", unit: unitCol >= 0 ? String(row[unitCol] ?? "").trim() : "", quantity: qtyCol >= 0 ? num(row[qtyCol]) : 0, sourceRow: headerRow + index + 2 } satisfies ImportItem;
-  }).filter(Boolean) as ImportItem[];
-  return { items, qtyLabel: qtyCol >= 0 ? String(headers[qtyCol] || `Колонка ${qtyCol + 1}`) : "Не найдена", barcodeLabel: barcodeCol >= 0 ? String(headers[barcodeCol] || `Колонка ${barcodeCol + 1}`) : "Нет" };
+
+  const byName = new Map<string, ImportItem>();
+  rows.forEach((row, index) => {
+    const name = String(row[nameCol] ?? "").trim();
+    if (!name) return;
+    const key = norm(name);
+    if (
+      key === "итого" ||
+      key.startsWith("итого ") ||
+      key === "место хранения" ||
+      key === "номенклатура" ||
+      key.startsWith("склад лкм")
+    ) return;
+
+    const quantity = num(row[qtyCol]);
+    const item: ImportItem = {
+      name,
+      sku: skuCol >= 0 ? String(row[skuCol] ?? "").trim() : "",
+      oneCId: oneCCol >= 0 ? String(row[oneCCol] ?? "").trim() : "",
+      barcode: barcodeCol >= 0 ? barcodeValue(row[barcodeCol]) : "",
+      category: categoryCol >= 0 ? String(row[categoryCol] ?? "").trim() : "",
+      unit: unitCol >= 0 ? String(row[unitCol] ?? "").trim() : "",
+      quantity,
+      sourceRow: headerRow + index + 2,
+    };
+
+    const previous = byName.get(key);
+    if (previous) {
+      previous.quantity = Number(previous.quantity || 0) + quantity;
+    } else {
+      byName.set(key, item);
+    }
+  });
+
+  const items = Array.from(byName.values());
+  if (!items.length) throw new Error("В файле не найдено материалов");
+  const columnName = String(headers[qtyCol] || `колонка ${String.fromCharCode(65 + qtyCol)}`);
+  return { items, qtyLabel: `Остаток 1С · ${columnName}`, barcodeLabel: barcodeCol >= 0 ? String(headers[barcodeCol] || `Колонка ${barcodeCol + 1}`) : "Нет" };
 }
 
 export default function DepartmentOneCMaterialsPage() {
@@ -109,7 +148,7 @@ export default function DepartmentOneCMaterialsPage() {
     catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка размещения"); }
     finally { setSaving(false); }
   };
-  const doImport = async () => { if (!importItems.length) return; setSaving(true); try { const r = await fetch("/api/department-onec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", items: importItems }) }); const body = await r.json() as { error?: string; created?: number; updated?: number }; if (!r.ok) throw new Error(body.error || "Импорт не выполнен"); toast.success(`Справочник 1С: ${body.created || 0} новых, ${body.updated || 0} обновлено`); setImportOpen(false); setImportItems([]); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка импорта"); } finally { setSaving(false); } };
+  const doImport = async () => { if (!importItems.length) return; setSaving(true); try { const r = await fetch("/api/department-onec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", items: importItems, replaceCatalog: true }) }); const body = await r.json() as { error?: string; created?: number; updated?: number; deleted?: number }; if (!r.ok) throw new Error(body.error || "Импорт не выполнен"); toast.success(`Справочник 1С: ${body.created || 0} новых, ${body.updated || 0} обновлено, ${body.deleted || 0} старых удалено`); setImportOpen(false); setImportItems([]); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Ошибка импорта"); } finally { setSaving(false); } };
 
   const deleteCatalogItem = async (item: CatalogItem) => {
     if (!canDelete) return;
