@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Loader2, RefreshCw, ScanLine, X } from "lucide-react";
+import { Camera, Keyboard, Loader2, RefreshCw, ScanLine, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -69,6 +69,9 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
   const controlsRef = useRef<ScannerControls | null>(null);
   const foundRef = useRef(false);
   const startSeqRef = useRef(0);
+  const hardwareBufferRef = useRef("");
+  const hardwareTimerRef = useRef<number | null>(null);
+  const hiddenInputRef = useRef<HTMLInputElement>(null);
 
   const stop = useCallback(() => {
     startSeqRef.current += 1;
@@ -110,6 +113,50 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
     window.setTimeout(() => close(), 180);
     return true;
   }, [acceptedValues, close, onDetected]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    hardwareBufferRef.current = "";
+    const flush = () => {
+      const value = hardwareBufferRef.current.trim();
+      hardwareBufferRef.current = "";
+      if (hardwareTimerRef.current !== null) {
+        window.clearTimeout(hardwareTimerRef.current);
+        hardwareTimerRef.current = null;
+      }
+      if (value.length >= 2) acceptValue(value);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+      if (event.key === "Enter" || event.key === "Tab") {
+        if (hardwareBufferRef.current) {
+          event.preventDefault();
+          flush();
+        }
+        return;
+      }
+
+      if (event.key.length !== 1) return;
+      hardwareBufferRef.current += event.key;
+
+      if (hardwareTimerRef.current !== null) window.clearTimeout(hardwareTimerRef.current);
+      hardwareTimerRef.current = window.setTimeout(flush, 120);
+    };
+
+    const focusTimer = window.setTimeout(() => hiddenInputRef.current?.focus({ preventScroll: true }), 50);
+    window.addEventListener("keydown", onKeyDown, true);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", onKeyDown, true);
+      if (hardwareTimerRef.current !== null) window.clearTimeout(hardwareTimerRef.current);
+      hardwareTimerRef.current = null;
+      hardwareBufferRef.current = "";
+    };
+  }, [acceptValue, open]);
 
   const startCamera = useCallback(async () => {
     const video = videoRef.current;
@@ -180,6 +227,11 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
 
   useEffect(() => {
     if (!open) return;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid) {
+      setStatus("ТСД готов к сканированию. Нажмите аппаратную кнопку сканера. Камера для этого не требуется.");
+      return;
+    }
     const timer = window.setTimeout(() => void startCamera(), 150);
     return () => window.clearTimeout(timer);
   }, [open, startCamera]);
@@ -194,9 +246,22 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
     <Dialog open={open} onOpenChange={(value) => value ? setOpen(true) : close()}>
       <DialogContent className="w-[calc(100vw-24px)] max-w-lg overflow-hidden p-0">
         <DialogHeader className="px-4 pt-4 sm:px-5 sm:pt-5">
-          <DialogTitle className="flex items-center gap-2"><ScanLine size={20} /> Сканирование камерой</DialogTitle>
-          <DialogDescription>Наведите камеру на QR-код ячейки или Code128 материала. Распознавание произойдёт автоматически.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><ScanLine size={20} /> Сканирование кода</DialogTitle>
+          <DialogDescription>ТСД: нажмите аппаратную кнопку сканера. Телефон: можно использовать заднюю камеру.</DialogDescription>
         </DialogHeader>
+
+        <input
+          ref={hiddenInputRef}
+          className="fixed left-[-9999px] top-[-9999px] h-px w-px opacity-0"
+          aria-hidden="true"
+          autoComplete="off"
+          inputMode="none"
+          onChange={(event) => {
+            const value = event.target.value.trim();
+            if (value) acceptValue(value);
+            event.target.value = "";
+          }}
+        />
 
         <div className="relative mx-3 mb-3 overflow-hidden rounded-2xl bg-black sm:mx-5 sm:mb-5">
           <video ref={videoRef} autoPlay playsInline muted disablePictureInPicture className="aspect-[3/4] w-full object-cover sm:aspect-[4/3]" />
@@ -212,12 +277,14 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
 
           {status && <div className="absolute inset-0 flex items-center justify-center bg-black/90 p-6 text-center text-white">
             <div className="max-w-sm">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10"><Keyboard size={24} /></div>
               <p className="text-sm leading-6">{status}</p>
+              <p className="mt-3 text-xs leading-5 text-white/70">Если это ТСД — просто нажмите физическую кнопку сканера и наведите на QR/штрихкод.</p>
               <Button type="button" variant="secondary" className="mt-4 h-12 px-5 text-base font-bold" onClick={() => void startCamera()}>
-                <Camera size={18} /> Включить камеру
+                <Camera size={18} /> Использовать камеру
               </Button>
-              <Button type="button" variant="ghost" className="mt-2 text-white hover:bg-white/10 hover:text-white" onClick={() => void startCamera()}>
-                <RefreshCw size={16} /> Повторить
+              <Button type="button" variant="ghost" className="mt-2 text-white hover:bg-white/10 hover:text-white" onClick={() => hiddenInputRef.current?.focus({ preventScroll: true })}>
+                <RefreshCw size={16} /> Ждать сканер ТСД
               </Button>
             </div>
           </div>}
