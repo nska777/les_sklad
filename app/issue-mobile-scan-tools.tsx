@@ -91,10 +91,10 @@ export function IssueMobileScanTools() {
     <div className="mt-4 rounded-2xl border-2 border-orange-200 bg-orange-50/80 p-3 shadow-sm sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900"><Camera size={19} className="text-orange-600" /> Сканер камерой телефона</div>
-          <p className="mt-1 text-xs leading-5 text-slate-600">На iPhone нажмите нужную кнопку — откроется задняя камера. Первый раз Safari попросит разрешение.</p>
+          <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900"><Camera size={19} className="text-orange-600" /> Сканер QR / штрихкодов</div>
+          <p className="mt-1 text-xs leading-5 text-slate-600">На ТСД используйте аппаратную кнопку сканирования. На телефоне можно сканировать задней камерой; при первом запуске браузер попросит разрешение.</p>
         </div>
-        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700">iPhone / Android</span>
+        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700">ТСД / Android / iPhone</span>
       </div>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-3">
