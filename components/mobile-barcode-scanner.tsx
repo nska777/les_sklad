@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, Loader2, RefreshCw, ScanLine, X } from "lucide-react";
+import { Camera, Keyboard, Loader2, RefreshCw, ScanLine, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -25,6 +25,8 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
   const controlsRef = useRef<ScannerControls | null>(null);
   const foundRef = useRef(false);
   const startIdRef = useRef(0);
+  const hardwareBufferRef = useRef("");
+  const hardwareTimerRef = useRef<number | null>(null);
 
   const stop = useCallback(() => {
     controlsRef.current?.stop();
@@ -48,6 +50,64 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
   }, [stop]);
 
   useEffect(() => () => stop(), [stop]);
+
+  const acceptValue = useCallback((raw: string) => {
+    if (foundRef.current) return false;
+    const value = raw.trim();
+    if (!value) return false;
+
+    const normalized = value.toUpperCase();
+    const allowed = (acceptedValues || [])
+      .map((item) => String(item || "").trim().toUpperCase())
+      .filter(Boolean);
+    if (allowed.length && !allowed.includes(normalized)) return false;
+
+    foundRef.current = true;
+    if (navigator.vibrate) navigator.vibrate(70);
+    onDetected(value);
+    setStatus(`Считано: ${value}`);
+    window.setTimeout(() => close(), 180);
+    return true;
+  }, [acceptedValues, close, onDetected]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    hardwareBufferRef.current = "";
+    const flush = () => {
+      const value = hardwareBufferRef.current.trim();
+      hardwareBufferRef.current = "";
+      if (hardwareTimerRef.current !== null) {
+        window.clearTimeout(hardwareTimerRef.current);
+        hardwareTimerRef.current = null;
+      }
+      if (value.length >= 2) acceptValue(value);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.key === "Enter" || event.key === "Tab") {
+        if (hardwareBufferRef.current) {
+          event.preventDefault();
+          flush();
+        }
+        return;
+      }
+      if (event.key.length !== 1) return;
+
+      hardwareBufferRef.current += event.key;
+      if (hardwareTimerRef.current !== null) window.clearTimeout(hardwareTimerRef.current);
+      hardwareTimerRef.current = window.setTimeout(flush, 120);
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      if (hardwareTimerRef.current !== null) window.clearTimeout(hardwareTimerRef.current);
+      hardwareTimerRef.current = null;
+      hardwareBufferRef.current = "";
+    };
+  }, [acceptValue, open]);
 
   useEffect(() => {
     if (!open) {
@@ -118,25 +178,8 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
         const { BrowserMultiFormatReader } = await import("@zxing/browser");
         const reader = new BrowserMultiFormatReader();
         const controls = await reader.decodeFromStream(stream, video, (result) => {
-          if (!result || foundRef.current) return;
-          const value = result.getText().trim();
-          if (!value) return;
-
-          const normalized = value.toUpperCase();
-          const allowed = (acceptedValues || [])
-            .map((item) => String(item || "").trim().toUpperCase())
-            .filter(Boolean);
-          if (allowed.length && !allowed.includes(normalized)) {
-            // Камера может одновременно видеть QR ячейки и Code128 материала.
-            // Чужой код игнорируем и продолжаем сканирование вместо ложной ошибки.
-            return;
-          }
-
-          foundRef.current = true;
-          if (navigator.vibrate) navigator.vibrate(70);
-          onDetected(value);
-          setStatus(`Считано: ${value}`);
-          window.setTimeout(() => close(), 180);
+          if (!result) return;
+          acceptValue(result.getText());
         });
 
         if (cancelled || startId !== startIdRef.current) {
@@ -151,7 +194,13 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
         const message = error instanceof Error ? error.message : "Не удалось открыть камеру";
 
         if (name === "NotAllowedError" || /permission|notallowed|denied/i.test(message)) {
-          setStatus("Доступ к камере запрещён. На iPhone разрешите камеру для этого сайта и нажмите «Повторить».");
+          const ios = /iPad|iPhone|iPod/i.test(navigator.userAgent);
+          const android = /Android/i.test(navigator.userAgent);
+          setStatus(ios
+            ? "Доступ к камере запрещён. На iPhone откройте настройки сайта Safari, разрешите «Камера» и нажмите «Повторить». Аппаратный сканер ТСД можно использовать без камеры."
+            : android
+              ? "Доступ к камере запрещён. Разрешите камеру для браузера/этого сайта в Android и нажмите «Повторить». На ТСД можно просто нажать аппаратную кнопку сканирования — камера не требуется."
+              : "Доступ к камере запрещён. Разрешите камеру для этого сайта и нажмите «Повторить». Если используется ТСД, аппаратный сканер работает без камеры.");
         } else if (name === "NotFoundError" || /notfound|device.*not found/i.test(message)) {
           setStatus("Камера на устройстве не найдена.");
         } else if (name === "NotReadableError" || /notreadable|could not start/i.test(message)) {
@@ -171,7 +220,7 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
       window.clearTimeout(timer);
       stop();
     };
-  }, [acceptedValues, attempt, close, onDetected, open, stop]);
+  }, [acceptValue, attempt, open, stop]);
 
   return <>
     <Button type="button" variant="outline" disabled={disabled} onClick={() => setOpen(true)} className={className}>
@@ -180,8 +229,8 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
     <Dialog open={open} onOpenChange={(value) => value ? setOpen(true) : close()}>
       <DialogContent className="w-[calc(100vw-24px)] max-w-lg overflow-hidden p-0">
         <DialogHeader className="px-4 pt-4 sm:px-5 sm:pt-5">
-          <DialogTitle className="flex items-center gap-2"><ScanLine size={20} /> Сканирование камерой</DialogTitle>
-          <DialogDescription>Наведите заднюю камеру на QR-код ячейки или Code128 материала. Распознавание произойдёт автоматически.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2"><ScanLine size={20} /> Сканирование кода</DialogTitle>
+          <DialogDescription>Телефон: наведите заднюю камеру. ТСД: нажмите аппаратную кнопку сканирования — код будет принят автоматически.</DialogDescription>
         </DialogHeader>
         <div className="relative mx-3 mb-3 overflow-hidden rounded-2xl bg-black sm:mx-5 sm:mb-5">
           <video ref={videoRef} autoPlay playsInline muted disablePictureInPicture className="aspect-[3/4] w-full object-cover sm:aspect-[4/3]" />
@@ -189,7 +238,8 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
             <div className="pointer-events-none absolute inset-[18%_10%] rounded-2xl border-2 border-white/90 shadow-[0_0_0_999px_rgba(0,0,0,.28)]" />
             <div className="pointer-events-none absolute left-1/2 top-1/2 h-px w-[58%] -translate-x-1/2 bg-red-400/80 shadow-[0_0_12px_rgba(248,113,113,.9)]" />
           </>}
-          {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white"><div className="flex items-center gap-2 rounded-full bg-black/50 px-4 py-2 text-sm"><Loader2 className="animate-spin" size={18} /> Запускаю заднюю камеру…</div></div>}
+          {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white"><div className="flex items-center gap-2 rounded-full bg-black/50 px-4 py-2 text-sm"><Loader2 className="animate-spin" size={18} /> Запускаю камеру…</div></div>}
+          {!status && <div className="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full bg-black/60 px-3 py-1.5 text-[11px] font-semibold text-white"><Keyboard size={14}/> ТСД: нажмите кнопку сканирования</div>}
           {status && <div className="absolute inset-0 flex items-center justify-center bg-black/85 p-6 text-center text-white"><div className="max-w-sm"><p className="text-sm leading-6">{status}</p><Button type="button" variant="secondary" className="mt-4" onClick={() => setAttempt((value) => value + 1)}><RefreshCw size={16} /> Повторить</Button></div></div>}
           <button type="button" onClick={close} className="absolute right-3 top-3 z-20 rounded-full bg-black/60 p-2 text-white"><X size={18} /></button>
         </div>
