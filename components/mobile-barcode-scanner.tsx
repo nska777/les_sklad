@@ -71,7 +71,9 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
   const startSeqRef = useRef(0);
   const hardwareBufferRef = useRef("");
   const hardwareTimerRef = useRef<number | null>(null);
-  const hiddenInputRef = useRef<HTMLInputElement>(null);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const captureInputRef = useRef<HTMLInputElement>(null);
+  const [manualValue, setManualValue] = useState("");
 
   const stop = useCallback(() => {
     startSeqRef.current += 1;
@@ -146,7 +148,7 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
       hardwareTimerRef.current = window.setTimeout(flush, 120);
     };
 
-    const focusTimer = window.setTimeout(() => hiddenInputRef.current?.focus({ preventScroll: true }), 50);
+    const focusTimer = window.setTimeout(() => scanInputRef.current?.focus({ preventScroll: true }), 80);
     window.addEventListener("keydown", onKeyDown, true);
 
     return () => {
@@ -157,6 +159,32 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
       hardwareBufferRef.current = "";
     };
   }, [acceptValue, open]);
+
+  const decodeCapturedImage = useCallback(async (file: File) => {
+    setStarting(true);
+    setStatus("Распознаю код со снимка…");
+    const url = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      image.src = url;
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("Не удалось открыть снимок"));
+      });
+      const { BrowserMultiFormatReader } = await import("@zxing/browser");
+      const reader = new BrowserMultiFormatReader();
+      const result = await reader.decodeFromImageElement(image);
+      if (!acceptValue(result.getText())) {
+        setStatus("Код на снимке найден, но он не подходит для текущего шага.");
+      }
+    } catch {
+      foundRef.current = false;
+      setStatus("Не удалось распознать QR/штрихкод на снимке. Поднесите камеру ближе и попробуйте ещё раз.");
+    } finally {
+      URL.revokeObjectURL(url);
+      setStarting(false);
+    }
+  }, [acceptValue]);
 
   const startCamera = useCallback(async () => {
     const video = videoRef.current;
@@ -212,7 +240,7 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
       const message = error instanceof Error ? error.message : "Не удалось открыть камеру";
 
       if (name === "NotAllowedError" || name === "SecurityError" || /permission|notallowed|denied/i.test(message)) {
-        setStatus("Доступ к камере запрещён. Нажмите «Включить камеру» и подтвердите разрешение браузера. Если запрос не появляется — разрешите камеру для этого браузера в настройках Android.");
+        setStatus("Потоковая камера браузером заблокирована. Используйте аппаратный сканер ТСД или кнопку «Сфотографировать код» — она открывает системную камеру Android/iPhone.");
       } else if (name === "NotFoundError" || name === "OverconstrainedError" || /notfound|device.*not found|overconstrained/i.test(message)) {
         setStatus("Браузер не нашёл доступную камеру. Нажмите «Включить камеру» — система попробует открыть любую камеру устройства.");
       } else if (name === "NotReadableError" || /notreadable|could not start/i.test(message)) {
@@ -250,16 +278,43 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
           <DialogDescription>ТСД: нажмите аппаратную кнопку сканера. Телефон: можно использовать заднюю камеру.</DialogDescription>
         </DialogHeader>
 
+        <div className="mx-4 mb-3 rounded-2xl border border-blue-200 bg-blue-50 p-3 sm:mx-5">
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-900"><Keyboard size={18} /> ТСД / ручной ввод</div>
+          <p className="mt-1 text-xs leading-5 text-slate-600">Нажмите физическую кнопку сканера. Если ТСД работает как клавиатура, код появится здесь автоматически.</p>
+          <div className="mt-2 flex gap-2">
+            <input
+              ref={scanInputRef}
+              value={manualValue}
+              onChange={(event) => setManualValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                const value = manualValue.trim();
+                if (value && acceptValue(value)) setManualValue("");
+              }}
+              autoComplete="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              className="h-12 min-w-0 flex-1 rounded-xl border border-blue-300 bg-white px-3 font-mono text-base outline-none focus:ring-2 focus:ring-blue-400"
+              placeholder="Сканируйте или введите код"
+            />
+            <Button type="button" className="h-12" onClick={() => {
+              const value = manualValue.trim();
+              if (value && acceptValue(value)) setManualValue("");
+            }}>Принять</Button>
+          </div>
+        </div>
+
         <input
-          ref={hiddenInputRef}
-          className="fixed left-[-9999px] top-[-9999px] h-px w-px opacity-0"
-          aria-hidden="true"
-          autoComplete="off"
-          inputMode="none"
+          ref={captureInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
           onChange={(event) => {
-            const value = event.target.value.trim();
-            if (value) acceptValue(value);
+            const file = event.target.files?.[0];
             event.target.value = "";
+            if (file) void decodeCapturedImage(file);
           }}
         />
 
@@ -280,10 +335,10 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10"><Keyboard size={24} /></div>
               <p className="text-sm leading-6">{status}</p>
               <p className="mt-3 text-xs leading-5 text-white/70">Если это ТСД — просто нажмите физическую кнопку сканера и наведите на QR/штрихкод.</p>
-              <Button type="button" variant="secondary" className="mt-4 h-12 px-5 text-base font-bold" onClick={() => void startCamera()}>
-                <Camera size={18} /> Использовать камеру
+              <Button type="button" variant="secondary" className="mt-4 h-12 px-5 text-base font-bold" onClick={() => captureInputRef.current?.click()}>
+                <Camera size={18} /> Сфотографировать код
               </Button>
-              <Button type="button" variant="ghost" className="mt-2 text-white hover:bg-white/10 hover:text-white" onClick={() => hiddenInputRef.current?.focus({ preventScroll: true })}>
+              <Button type="button" variant="ghost" className="mt-2 text-white hover:bg-white/10 hover:text-white" onClick={() => scanInputRef.current?.focus({ preventScroll: true })}>
                 <RefreshCw size={16} /> Ждать сканер ТСД
               </Button>
             </div>
