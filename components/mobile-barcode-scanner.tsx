@@ -25,6 +25,7 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
   const controlsRef = useRef<ScannerControls | null>(null);
   const foundRef = useRef(false);
   const startIdRef = useRef(0);
+  const hardwareInputRef = useRef<HTMLInputElement>(null);
   const hardwareBufferRef = useRef("");
   const hardwareTimerRef = useRef<number | null>(null);
 
@@ -73,7 +74,15 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
   useEffect(() => {
     if (!open) return;
 
+    const focusHardwareInput = () => {
+      const input = hardwareInputRef.current;
+      if (!input) return;
+      input.focus({ preventScroll: true });
+      input.select();
+    };
+
     hardwareBufferRef.current = "";
+    const focusTimer = window.setTimeout(focusHardwareInput, 80);
     const flush = () => {
       const value = hardwareBufferRef.current.trim();
       hardwareBufferRef.current = "";
@@ -100,9 +109,15 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
       hardwareTimerRef.current = window.setTimeout(flush, 120);
     };
 
+    const keepFocused = () => window.setTimeout(focusHardwareInput, 30);
     window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointerup", keepFocused, true);
+    window.addEventListener("focus", focusHardwareInput);
     return () => {
+      window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerup", keepFocused, true);
+      window.removeEventListener("focus", focusHardwareInput);
       if (hardwareTimerRef.current !== null) window.clearTimeout(hardwareTimerRef.current);
       hardwareTimerRef.current = null;
       hardwareBufferRef.current = "";
@@ -230,8 +245,38 @@ export function MobileBarcodeScanner({ label, onDetected, disabled, className, a
       <DialogContent className="w-[calc(100vw-24px)] max-w-lg overflow-hidden p-0">
         <DialogHeader className="px-4 pt-4 sm:px-5 sm:pt-5">
           <DialogTitle className="flex items-center gap-2"><ScanLine size={20} /> Сканирование кода</DialogTitle>
-          <DialogDescription>Телефон: наведите заднюю камеру. ТСД: нажмите аппаратную кнопку сканирования — код будет принят автоматически.</DialogDescription>
+          <DialogDescription>Просто отсканируйте код. ТСД считывает аппаратной кнопкой, телефон — задней камерой. Код принимается автоматически.</DialogDescription>
         </DialogHeader>
+        <input
+          ref={hardwareInputRef}
+          aria-label="Ввод аппаратного сканера"
+          inputMode="none"
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          className="absolute left-[-9999px] top-[-9999px] h-px w-px opacity-0"
+          onInput={(event) => {
+            const input = event.currentTarget;
+            const value = input.value;
+            input.value = "";
+            if (!value) return;
+            hardwareBufferRef.current += value;
+            if (hardwareTimerRef.current !== null) window.clearTimeout(hardwareTimerRef.current);
+            hardwareTimerRef.current = window.setTimeout(() => {
+              const scanned = hardwareBufferRef.current.trim();
+              hardwareBufferRef.current = "";
+              if (scanned.length >= 2) acceptValue(scanned);
+            }, 90);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === "Tab") {
+              event.preventDefault();
+              const scanned = hardwareBufferRef.current.trim();
+              hardwareBufferRef.current = "";
+              if (scanned.length >= 2) acceptValue(scanned);
+            }
+          }}
+        />
         <div className="relative mx-3 mb-3 overflow-hidden rounded-2xl bg-black sm:mx-5 sm:mb-5">
           <video ref={videoRef} autoPlay playsInline muted disablePictureInPicture className="aspect-[3/4] w-full object-cover sm:aspect-[4/3]" />
           {!status && <>
